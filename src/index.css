@@ -65,3 +65,6 @@
 button, a, [role="button"] {
   transition-property: background-color, border-color, color, transform, opacity, box-shadow;
 }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

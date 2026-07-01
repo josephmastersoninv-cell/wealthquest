@@ -1,586 +1,726 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, TrendingDown, RefreshCw, Lock, Search, X, Plus, Minus, ChevronRight, AlertCircle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, EyeOff, Trophy, Crown, Star } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
-import { ASSETS, fetchAllPrices, getAssetById, clearPriceCache } from '@/lib/marketData';
-import { Button } from '@/components/ui/button';
+import { ASSETS, fetchAllPrices, syntheticPoints, SECTORS } from '@/lib/marketData';
+import { recordPortfolioValue, getPortfolioHistory } from '@/lib/portfolioHistory';
+import { calcPortfolioScore, getGradeColor } from '@/lib/portfolioScore';
 
+const PORTFOLIO_KEY = 'wealthquest_portfolio';
+const WATCHLIST_KEY = 'wealthquest_watchlist';
 const STARTING_CASH = 10000;
 const UNLOCK_LESSONS = 5;
-const PORTFOLIO_KEY = 'wealthquest_portfolio';
 
-// ── Local portfolio state in localStorage (separate from UserProgress) ────────
-function loadPortfolio() {
-  try {
-    const raw = localStorage.getItem(PORTFOLIO_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
-  return { cash: STARTING_CASH, holdings: {}, transactions: [] };
+// ─── Seeded RNG ───────────────────────────────────────────────────────────────
+function seededRand(seed) {
+  let s = seed;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xFFFFFFFF; };
 }
 
-function savePortfolio(p) {
-  localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p));
+function generateLeaderboard(prices) {
+  const names = [
+    { name: 'Jake M.',  avatar: '👨‍💼', badge: '🏆' },
+    { name: 'Sofia K.',  avatar: '👩‍💻', badge: '🔥' },
+    { name: 'Alex R.',   avatar: '👨‍🎓', badge: '📈' },
+    { name: 'Priya S.',  avatar: '👩‍🔬', badge: '💎' },
+    { name: 'Tom B.',    avatar: '🧑‍🚀', badge: '⚡' },
+    { name: 'Lea C.',    avatar: '👩‍🏫', badge: '🌟' },
+    { name: 'Finn D.',   avatar: '🧑‍🎨', badge: '🚀' },
+    { name: 'Mia W.',    avatar: '👩‍💼', badge: '💰' },
+    { name: 'Noah T.',   avatar: '👨‍🔬', badge: '📊' },
+    { name: 'Yuki A.',   avatar: '👩‍🎤', badge: '✨' },
+  ];
+  const week = Math.floor(Date.now() / (7 * 86400000));
+  return names.map((p, i) => {
+    const rand = seededRand(week * 100 + i);
+    const cash = 10000 * (0.8 + rand() * 0.4);
+    const shuffled = [...ASSETS].sort(() => rand() - 0.5).slice(0, 2 + Math.floor(rand() * 3));
+    let value = cash;
+    let topHolding = null;
+    let topVal = 0;
+    shuffled.forEach(asset => {
+      const price = prices[asset.id]?.price ?? 100;
+      const spent = (10000 - cash) * rand();
+      const shares = spent / price;
+      const val = shares * price;
+      value += val;
+      if (val > topVal) { topVal = val; topHolding = asset; }
+    });
+    const returnPct = ((value - 10000) / 10000) * 100;
+    return { ...p, id: i, value: Math.round(value * 100) / 100, returnPct, topHolding };
+  }).sort((a, b) => b.value - a.value);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function fmt(n, dec = 2) {
-  return n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-}
-function fmtPct(n) {
-  const s = n >= 0 ? '+' : '';
-  return `${s}${fmt(n)}%`;
-}
-function fmtDollar(n, showSign = false) {
-  const s = showSign && n >= 0 ? '+' : '';
-  return `${s}$${fmt(Math.abs(n))}`;
-}
-
-// ── Tiny sparkline ─────────────────────────────────────────────────────────────
-function MiniChange({ change }) {
-  const pos = change >= 0;
+// ─── SVG Sparkline ────────────────────────────────────────────────────────────
+function Sparkline({ points, positive, width = 64, height = 28 }) {
+  const pts = points?.length >= 2 ? points : null;
+  if (!pts) return <div style={{ width, height }} className="flex items-end"><div className="w-full h-0.5 bg-border rounded" /></div>;
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const range = max - min || 1;
+  const w = width, h = height;
+  const step = w / (pts.length - 1);
+  const py = v => h - 2 - ((v - min) / range) * (h - 4);
+  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${i * step} ${py(v)}`).join(' ');
+  const fill = `${d} L ${(pts.length - 1) * step} ${h} L 0 ${h} Z`;
+  const color = positive ? '#10b981' : '#f43f5e';
   return (
-    <span className={`text-xs font-bold ${pos ? 'text-emerald-600' : 'text-rose-500'}`}>
-      {pos ? '▲' : '▼'} {Math.abs(change).toFixed(2)}%
-    </span>
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
+      <path d={fill} fill={positive ? '#10b98118' : '#f43f5e18'} />
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-// ── Trade Modal ───────────────────────────────────────────────────────────────
-function TradeModal({ asset, price, portfolio, onClose, onTrade }) {
+// ─── Portfolio chart ──────────────────────────────────────────────────────────
+function PortfolioChart({ history, startingCash }) {
+  if (history.length < 2) {
+    return (
+      <div className="flex flex-col items-center justify-center h-28 text-muted-foreground text-xs gap-1">
+        <TrendingUp className="w-6 h-6 opacity-30" />
+        <span>Chart grows as you invest</span>
+      </div>
+    );
+  }
+  const values = history.map(h => h.value);
+  const min = Math.min(startingCash * 0.9, ...values);
+  const max = Math.max(startingCash * 1.1, ...values);
+  const range = max - min || 1;
+  const w = 340, h = 100;
+  const step = w / (values.length - 1);
+  const py = v => h - 4 - ((v - min) / range) * (h - 8);
+  const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${i * step} ${py(v)}`).join(' ');
+  const positive = values.at(-1) >= startingCash;
+  const color = positive ? '#10b981' : '#f43f5e';
+  const fillD = `${d} L ${(values.length - 1) * step} ${h} L 0 ${h} Z`;
+  return (
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
+      <line x1="0" y1={py(startingCash)} x2={w} y2={py(startingCash)}
+        stroke="currentColor" strokeWidth="0.5" strokeDasharray="4 3" className="text-border" />
+      <path d={fillD} fill={color} fillOpacity="0.12" />
+      <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={(values.length - 1) * step} cy={py(values.at(-1))} r="3.5" fill={color} />
+    </svg>
+  );
+}
+
+// ─── Trade Modal ──────────────────────────────────────────────────────────────
+function TradeModal({ asset, price, onClose, onTrade, cash }) {
   const [mode, setMode] = useState('buy');
-  const [qty, setQty] = useState('');
-  const numQty = parseFloat(qty) || 0;
-  const isCrypto = asset.type === 'crypto';
-  const held = portfolio.holdings[asset.id]?.qty ?? 0;
-  const maxBuy = price > 0 ? Math.floor(portfolio.cash / price * (isCrypto ? 10000 : 1)) / (isCrypto ? 10000 : 1) : 0;
-  const cost = numQty * price;
-  const canBuy = mode === 'buy' && numQty > 0 && cost <= portfolio.cash;
-  const canSell = mode === 'sell' && numQty > 0 && numQty <= held;
+  const [input, setInput] = useState('');
+  const [inputMode, setInputMode] = useState('dollars');
+
+  const dollars = inputMode === 'dollars' ? parseFloat(input) || 0 : (parseFloat(input) || 0) * price;
+  const shares = inputMode === 'dollars' ? dollars / price : parseFloat(input) || 0;
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ y: 80, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 80, opacity: 0 }}
-        className="w-full max-w-md bg-card rounded-3xl p-6 shadow-2xl"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">{asset.emoji}</span>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center p-4" onClick={onClose}>
+      <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
+        className="bg-card rounded-3xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">{asset.emoji}</span>
             <div>
-              <p className="font-extrabold text-foreground">{asset.name}</p>
-              <p className="text-xs text-muted-foreground">{asset.symbol} · ${fmt(price)}</p>
+              <p className="font-extrabold text-foreground">{asset.symbol}</p>
+              <p className="text-xs text-muted-foreground">${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-            <X className="w-4 h-4" />
-          </button>
+          <button onClick={onClose} className="p-2 rounded-xl bg-muted text-muted-foreground"><X className="w-4 h-4" /></button>
         </div>
 
-        {/* Buy / Sell tabs */}
-        <div className="flex bg-muted rounded-2xl p-1 mb-5">
+        <div className="flex rounded-xl bg-muted p-1 mb-4">
           {['buy', 'sell'].map(m => (
-            <button
-              key={m}
-              onClick={() => { setMode(m); setQty(''); }}
-              className={`flex-1 py-2 rounded-xl font-extrabold text-sm capitalize transition-all ${
-                mode === m
-                  ? m === 'buy' ? 'bg-emerald-500 text-white shadow' : 'bg-rose-500 text-white shadow'
-                  : 'text-muted-foreground'
-              }`}
-            >
+            <button key={m} onClick={() => { setMode(m); setInput(''); }}
+              className={`flex-1 py-2 rounded-lg text-sm font-extrabold capitalize transition-all ${mode === m ? m === 'buy' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white' : 'text-muted-foreground'}`}>
               {m}
             </button>
           ))}
         </div>
 
-        {/* Quantity input */}
-        <div className="mb-2">
-          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-            {isCrypto ? 'Amount (units)' : 'Shares'}
-          </label>
-          <div className="flex items-center gap-2 mt-1.5">
-            <button
-              onClick={() => setQty(q => Math.max(0, (parseFloat(q) || 0) - 1).toString())}
-              className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0"
-            >
-              <Minus className="w-4 h-4" />
+        <div className="flex rounded-lg bg-muted p-0.5 mb-3 text-xs">
+          {['dollars', 'shares'].map(m => (
+            <button key={m} onClick={() => setInputMode(m)}
+              className={`flex-1 py-1 rounded-md font-bold capitalize transition-all ${inputMode === m ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'}`}>
+              {m}
             </button>
-            <input
-              type="number"
-              min="0"
-              step={isCrypto ? '0.001' : '1'}
-              value={qty}
-              onChange={e => setQty(e.target.value)}
-              className="flex-1 h-10 bg-muted rounded-xl px-4 text-center font-extrabold text-lg text-foreground outline-none border-2 border-transparent focus:border-primary"
-              placeholder="0"
-            />
-            <button
-              onClick={() => setQty(q => ((parseFloat(q) || 0) + 1).toString())}
-              className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
+          ))}
         </div>
 
-        {/* Quick-fill buttons */}
-        <div className="flex gap-2 mb-5">
-          {mode === 'buy'
-            ? [25, 50, 75, 100].map(pct => (
-                <button key={pct} onClick={() => {
-                  const units = isCrypto
-                    ? Math.floor(portfolio.cash * pct / 100 / price * 1000) / 1000
-                    : Math.floor(portfolio.cash * pct / 100 / price);
-                  setQty(units.toString());
-                }}
-                  className="flex-1 py-1.5 text-xs font-bold rounded-xl bg-muted text-muted-foreground hover:text-foreground"
-                >
-                  {pct}%
-                </button>
-              ))
-            : [25, 50, 75, 100].map(pct => (
-                <button key={pct} onClick={() => {
-                  const units = isCrypto
-                    ? Math.floor(held * pct / 100 * 1000) / 1000
-                    : Math.floor(held * pct / 100);
-                  setQty(units.toString());
-                }}
-                  className="flex-1 py-1.5 text-xs font-bold rounded-xl bg-muted text-muted-foreground hover:text-foreground"
-                >
-                  {pct}%
-                </button>
-              ))
-          }
+        <div className="relative mb-1">
+          {inputMode === 'dollars' && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">$</span>}
+          <input type="number" value={input} onChange={e => setInput(e.target.value)}
+            placeholder={inputMode === 'dollars' ? '0.00' : '0 shares'}
+            className={`w-full bg-muted rounded-xl py-3 text-foreground font-bold text-lg focus:outline-none focus:ring-2 focus:ring-primary ${inputMode === 'dollars' ? 'pl-7 pr-4' : 'px-4'}`} />
         </div>
 
-        {/* Order summary */}
-        <div className="bg-muted rounded-2xl p-4 mb-5 space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Est. cost</span>
-            <span className="font-extrabold text-foreground">${fmt(cost)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">{mode === 'buy' ? 'Cash after' : 'Cash after'}</span>
-            <span className={`font-extrabold ${mode === 'buy' ? (canBuy ? 'text-foreground' : 'text-rose-500') : 'text-foreground'}`}>
-              ${fmt(mode === 'buy' ? portfolio.cash - cost : portfolio.cash + cost)}
-            </span>
-          </div>
-          {mode === 'sell' && held > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">You hold</span>
-              <span className="font-bold text-foreground">{held} {asset.symbol}</span>
-            </div>
-          )}
+        {dollars > 0 && (
+          <p className="text-xs text-muted-foreground mb-3 px-1">≈ {shares.toFixed(6)} shares · ${dollars.toFixed(2)}</p>
+        )}
+        <p className="text-xs text-muted-foreground mb-3 px-1">Cash: ${cash.toFixed(2)}</p>
+
+        <div className="flex gap-2 mb-4">
+          {[25, 50, 75, 100].map(pct => (
+            <button key={pct} onClick={() => { setInputMode('dollars'); setInput(String((cash * pct / 100).toFixed(2))); }}
+              className="flex-1 bg-muted rounded-lg py-1.5 text-xs font-bold text-muted-foreground active:scale-95">{pct}%</button>
+          ))}
         </div>
 
-        <button
-          onClick={() => { onTrade(asset.id, mode, numQty, price); onClose(); }}
-          disabled={!(mode === 'buy' ? canBuy : canSell)}
-          className={`w-full h-14 rounded-2xl font-extrabold text-base text-white disabled:opacity-40 transition-all active:scale-[0.98] ${
-            mode === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'
-          }`}
-        >
-          {mode === 'buy' ? `Buy ${numQty} ${asset.symbol}` : `Sell ${numQty} ${asset.symbol}`}
+        <button onClick={() => { if (dollars > 0 && shares > 0) onTrade(mode, shares, dollars); }}
+          disabled={dollars <= 0 || shares <= 0 || (mode === 'buy' && dollars > cash)}
+          className={`w-full py-3.5 rounded-2xl font-extrabold text-white text-sm transition-all active:scale-[0.98] disabled:opacity-40 ${mode === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'}`}>
+          {mode === 'buy' ? `Buy ${shares > 0 ? shares.toFixed(4) + ' shares' : ''}` : `Sell ${shares > 0 ? shares.toFixed(4) + ' shares' : ''}`}
         </button>
       </motion.div>
     </motion.div>
   );
 }
 
-// ── Main Portfolio page ────────────────────────────────────────────────────────
+// ─── Market Mood ──────────────────────────────────────────────────────────────
+function MarketMood({ prices }) {
+  const list = ASSETS.filter(a => prices[a.id]);
+  const upCount = list.filter(a => (prices[a.id]?.change ?? 0) > 0).length;
+  const ratio = list.length > 0 ? upCount / list.length : 0.5;
+  const mood = ratio > 0.65 ? 'Bullish' : ratio < 0.35 ? 'Bearish' : 'Neutral';
+  const color = ratio > 0.65 ? 'text-emerald-400' : ratio < 0.35 ? 'text-rose-400' : 'text-amber-400';
+  const emoji = ratio > 0.65 ? '🐂' : ratio < 0.35 ? '🐻' : '😐';
+  return (
+    <div className="flex items-center gap-1.5 bg-muted/60 rounded-xl px-3 py-1.5">
+      <span className="text-sm">{emoji}</span>
+      <span className={`text-xs font-extrabold ${color}`}>{mood}</span>
+      <span className="text-xs text-muted-foreground">· {upCount}/{list.length} up</span>
+    </div>
+  );
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Portfolio() {
   const { progress } = useUserProgress();
   const [prices, setPrices] = useState({});
   const [loading, setLoading] = useState(true);
-  const [portfolio, setPortfolio] = useState(loadPortfolio);
-  const [tradeAsset, setTradeAsset] = useState(null);
-  const [search, setSearch] = useState('');
-  const [tab, setTab] = useState('market'); // market | holdings | history
   const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [portfolio, setPortfolio] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) ?? 'null'); } catch { return null; }
+  });
+  const [watchlist, setWatchlist] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(WATCHLIST_KEY) ?? '[]'); } catch { return []; }
+  });
+  const [tab, setTab] = useState('market');
+  const [sector, setSector] = useState('All');
+  const [tradeAsset, setTradeAsset] = useState(null);
+  const [showBalance, setShowBalance] = useState(true);
+  const [history, setHistory] = useState(getPortfolioHistory);
+  const [sortByMovers, setSortByMovers] = useState(false);
+  const [expandedNews, setExpandedNews] = useState(null);
 
-  const completedCount = (progress?.completed_lessons ?? []).length;
-  const unlocked = completedCount >= UNLOCK_LESSONS;
+  const lessons = progress?.completed_lessons?.length ?? 0;
+  const unlocked = lessons >= UNLOCK_LESSONS;
 
-  const loadPrices = useCallback(async (force = false) => {
-    if (force) { clearPriceCache(); setRefreshing(true); }
-    try {
-      const data = await fetchAllPrices();
-      setPrices(data);
-      setLastUpdated(new Date());
-    } catch { /* fallback already handled inside fetchAllPrices */ }
+  useEffect(() => {
+    if (!localStorage.getItem(PORTFOLIO_KEY)) {
+      const init = { cash: STARTING_CASH, holdings: [], trades: [] };
+      localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(init));
+      setPortfolio(init);
+    }
+  }, []);
+
+  const loadPrices = useCallback(async () => {
+    setRefreshing(true);
+    const p = await fetchAllPrices();
+    Object.keys(p).forEach(id => {
+      if (!p[id].points?.length) p[id] = { ...p[id], points: syntheticPoints(p[id].price, p[id].change) };
+    });
+    setPrices(p);
     setLoading(false);
     setRefreshing(false);
   }, []);
 
-  useEffect(() => { if (unlocked) loadPrices(); }, [unlocked]);
+  useEffect(() => { loadPrices(); }, [loadPrices]);
 
-  const handleTrade = useCallback((assetId, mode, qty, price) => {
-    setPortfolio(prev => {
-      const next = {
-        ...prev,
-        holdings: { ...prev.holdings },
-        transactions: [...(prev.transactions ?? [])],
-      };
-      const held = prev.holdings[assetId] ?? { qty: 0, avgCost: 0 };
+  const cash = portfolio?.cash ?? STARTING_CASH;
+  const holdings = portfolio?.holdings ?? [];
 
-      if (mode === 'buy') {
-        const totalCost = qty * price;
-        const newQty = held.qty + qty;
-        const newAvg = (held.qty * held.avgCost + totalCost) / newQty;
-        next.holdings[assetId] = { qty: newQty, avgCost: newAvg };
-        next.cash = prev.cash - totalCost;
+  const totalValue = useMemo(() => {
+    const inv = holdings.reduce((sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0);
+    return cash + inv;
+  }, [holdings, prices, cash]);
+
+  // Record history after prices load
+  useEffect(() => {
+    if (!loading && totalValue > 0) {
+      recordPortfolioValue(totalValue);
+      setHistory(getPortfolioHistory());
+    }
+  }, [loading]);
+
+  const totalGain = totalValue - STARTING_CASH;
+  const totalGainPct = (totalGain / STARTING_CASH) * 100;
+  const spyReturn = prices['SPY']?.change ?? 0;
+
+  const score = useMemo(() => calcPortfolioScore({
+    holdings: holdings.map(h => ({ ...h, sector: ASSETS.find(a => a.id === h.assetId)?.sector })),
+    prices, history, startingCash: STARTING_CASH,
+  }), [holdings, prices, history]);
+
+  const leaderboard = useMemo(() => Object.keys(prices).length ? generateLeaderboard(prices) : [], [prices]);
+
+  const myRank = useMemo(() => {
+    if (!leaderboard.length) return null;
+    const r = leaderboard.findIndex(p => totalValue > p.value);
+    return r === -1 ? leaderboard.length + 1 : r + 1;
+  }, [leaderboard, totalValue]);
+
+  function savePortfolio(p) {
+    localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p));
+    setPortfolio(p);
+  }
+
+  function handleTrade(mode, shares, dollars) {
+    const asset = tradeAsset;
+    const price = prices[asset.id]?.price ?? 0;
+    const p = { ...portfolio, holdings: [...(portfolio?.holdings ?? [])], trades: [...(portfolio?.trades ?? [])] };
+    if (mode === 'buy') {
+      if (dollars > p.cash) return;
+      const ex = p.holdings.find(h => h.assetId === asset.id);
+      if (ex) {
+        const tot = ex.shares + shares;
+        ex.avgCost = (ex.avgCost * ex.shares + price * shares) / tot;
+        ex.shares = tot;
       } else {
-        const newQty = held.qty - qty;
-        next.holdings[assetId] = { qty: newQty, avgCost: held.avgCost };
-        if (newQty <= 0) delete next.holdings[assetId];
-        next.cash = prev.cash + qty * price;
+        p.holdings.push({ assetId: asset.id, shares, avgCost: price });
       }
+      p.cash -= dollars;
+    } else {
+      const h = p.holdings.find(h => h.assetId === asset.id);
+      if (!h || h.shares < shares) return;
+      h.shares -= shares;
+      if (h.shares < 0.000001) p.holdings = p.holdings.filter(x => x.assetId !== asset.id);
+      p.cash += price * shares;
+    }
+    p.trades.push({ type: mode, assetId: asset.id, shares, price, ts: Date.now() });
+    savePortfolio(p);
+    setTradeAsset(null);
+  }
 
-      next.transactions.unshift({
-        id: Date.now(),
-        assetId,
-        mode,
-        qty,
-        price,
-        ts: new Date().toISOString(),
-      });
-      // Keep last 100 transactions
-      if (next.transactions.length > 100) next.transactions = next.transactions.slice(0, 100);
+  function toggleWatchlist(id) {
+    const next = watchlist.includes(id) ? watchlist.filter(w => w !== id) : [...watchlist, id];
+    setWatchlist(next);
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(next));
+  }
 
-      savePortfolio(next);
-      return next;
-    });
-  }, []);
+  const allSectors = ['All', 'Watchlist', ...SECTORS];
 
-  // Portfolio value calculations
-  const holdingsValue = Object.entries(portfolio.holdings).reduce((sum, [id, { qty }]) => {
-    return sum + qty * (prices[id]?.price ?? 0);
-  }, 0);
-  const totalValue = portfolio.cash + holdingsValue;
-  const totalReturn = totalValue - STARTING_CASH;
-  const totalReturnPct = (totalReturn / STARTING_CASH) * 100;
+  const filteredAssets = useMemo(() => {
+    let list = sector === 'Watchlist' ? ASSETS.filter(a => watchlist.includes(a.id))
+      : sector === 'All' ? ASSETS : ASSETS.filter(a => a.sector === sector);
+    if (sortByMovers) list = [...list].sort((a, b) => Math.abs(prices[b.id]?.change ?? 0) - Math.abs(prices[a.id]?.change ?? 0));
+    return list;
+  }, [sector, sortByMovers, watchlist, prices]);
 
-  const filteredAssets = ASSETS.filter(a =>
-    search === '' ||
-    a.name.toLowerCase().includes(search.toLowerCase()) ||
-    a.symbol.toLowerCase().includes(search.toLowerCase())
-  );
+  const hotMovers = useMemo(() => [...ASSETS].filter(a => prices[a.id])
+    .sort((a, b) => Math.abs(prices[b.id].change) - Math.abs(prices[a.id].change)).slice(0, 5), [prices]);
+
+  const NEWS = useMemo(() => ({
+    Technology: [
+      { title: 'AI chip demand drives tech rally', sentiment: 'up', time: '2h ago' },
+      { title: 'Big Tech earnings beat expectations', sentiment: 'up', time: '5h ago' },
+      { title: 'Fed signals rate hold — tech benefits', sentiment: 'up', time: '1d ago' },
+    ],
+    Finance: [
+      { title: 'Banks report strong Q2 profits', sentiment: 'up', time: '3h ago' },
+      { title: 'Credit card spending rises 4%', sentiment: 'up', time: '6h ago' },
+    ],
+    Consumer: [
+      { title: 'Retail sales surprise to the upside', sentiment: 'up', time: '4h ago' },
+      { title: 'EV demand softens as rates stay high', sentiment: 'down', time: '8h ago' },
+    ],
+    Energy: [
+      { title: 'Oil climbs on OPEC supply cut rumours', sentiment: 'up', time: '1h ago' },
+      { title: 'Natural gas prices slide on warm weather', sentiment: 'down', time: '3h ago' },
+    ],
+    Healthcare: [
+      { title: 'Drug approvals fuel healthcare gains', sentiment: 'up', time: '2h ago' },
+      { title: 'Insurance costs weigh on UNH outlook', sentiment: 'down', time: '5h ago' },
+    ],
+    'Broad Market': [
+      { title: 'S&P 500 sets new intraday high', sentiment: 'up', time: '1h ago' },
+      { title: 'VIX near 12-month low', sentiment: 'up', time: '4h ago' },
+    ],
+    Crypto: [
+      { title: 'BTC surges on ETF inflow momentum', sentiment: 'up', time: '30m ago' },
+      { title: 'SEC weighs new crypto custody rules', sentiment: 'down', time: '3h ago' },
+    ],
+  }), []);
 
   if (!unlocked) {
     return (
-      <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto px-4 flex flex-col items-center justify-center text-center">
-        <div className="w-24 h-24 rounded-3xl bg-muted flex items-center justify-center mb-6">
-          <Lock className="w-12 h-12 text-muted-foreground" />
-        </div>
-        <h1 className="text-2xl font-extrabold text-foreground mb-2">Portfolio Simulator</h1>
-        <p className="text-muted-foreground mb-6 leading-relaxed max-w-xs">
-          Trade real stocks, ETFs, and crypto with virtual money. Powered by live market data.
-          Complete <strong>{UNLOCK_LESSONS} lessons</strong> to unlock.
-        </p>
-        <div className="w-full bg-card border border-border rounded-2xl p-4 mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-bold text-foreground">Lessons completed</span>
-            <span className="text-sm font-extrabold text-primary">{completedCount}/{UNLOCK_LESSONS}</span>
-          </div>
-          <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-primary rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(100, (completedCount / UNLOCK_LESSONS) * 100)}%` }} />
-          </div>
-        </div>
-        <Link to="/"><Button className="w-full h-14 font-extrabold rounded-2xl">Go to Learning Path →</Button></Link>
-        <div className="mt-10 w-full grid grid-cols-2 gap-3">
-          {[
-            { icon: '📊', label: 'Live Prices', sub: 'Yahoo Finance + CoinGecko' },
-            { icon: '💵', label: '$10,000 Start', sub: 'Virtual capital to invest' },
-            { icon: '📈', label: '12 Assets', sub: 'Stocks, ETFs, crypto' },
-            { icon: '📉', label: 'Real P&L', sub: 'Track gains & losses' },
-          ].map(f => (
-            <div key={f.label} className="bg-card border border-border rounded-2xl p-3 text-left opacity-60">
-              <span className="text-2xl">{f.icon}</span>
-              <p className="text-xs font-extrabold text-foreground mt-2">{f.label}</p>
-              <p className="text-xs text-muted-foreground">{f.sub}</p>
-            </div>
-          ))}
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 pb-28 gap-4 text-center">
+        <span className="text-6xl">🔒</span>
+        <h2 className="text-xl font-extrabold text-foreground">Portfolio Locked</h2>
+        <p className="text-sm text-muted-foreground max-w-xs">Complete {UNLOCK_LESSONS} lessons to unlock the Portfolio Simulator.</p>
+        <div className="bg-muted rounded-2xl px-6 py-3">
+          <p className="font-extrabold text-foreground">{lessons} / {UNLOCK_LESSONS} lessons done</p>
         </div>
       </div>
     );
   }
 
+  const tabs = [{ id: 'market', label: 'Market' }, { id: 'holdings', label: 'Holdings' }, { id: 'leaderboard', label: 'Rank' }];
+
   return (
     <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto">
       {/* Header */}
-      <div className="px-4 pt-12 pb-4">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-extrabold text-foreground">Portfolio</h1>
-          <button
-            onClick={() => loadPrices(true)}
-            disabled={refreshing}
-            className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground"
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-
-        {/* Portfolio value card */}
-        <div className="bg-gradient-to-br from-primary via-violet-600 to-fuchsia-600 rounded-3xl p-6 text-white mb-4 shadow-xl">
-          <p className="text-sm font-bold opacity-70 mb-1">Total Portfolio</p>
-          <p className="text-4xl font-black mb-1">${fmt(totalValue)}</p>
-          <div className="flex items-center gap-2">
-            {totalReturn >= 0
-              ? <TrendingUp className="w-4 h-4 text-emerald-300" />
-              : <TrendingDown className="w-4 h-4 text-rose-300" />}
-            <span className={`text-sm font-bold ${totalReturn >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {fmtDollar(totalReturn, true)} ({fmtPct(totalReturnPct)})
-            </span>
-            <span className="text-xs opacity-60 ml-auto">vs $10k start</span>
+      <div className="px-4 pt-6 pb-4 bg-card border-b border-border">
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <p className="text-xs text-muted-foreground font-bold uppercase tracking-wide">Portfolio Value</p>
+            <div className="flex items-baseline gap-2 mt-0.5">
+              {showBalance
+                ? <p className="text-3xl font-extrabold text-foreground">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                : <p className="text-3xl font-extrabold text-foreground">••••••</p>
+              }
+              <button onClick={() => setShowBalance(v => !v)} className="text-muted-foreground">
+                {showBalance ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className={`flex items-center gap-1 text-sm font-bold mt-0.5 ${totalGain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {totalGain >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+              {totalGain >= 0 ? '+' : ''}${Math.abs(totalGain).toFixed(2)} ({totalGain >= 0 ? '+' : ''}{totalGainPct.toFixed(2)}%)
+              <span className="text-muted-foreground font-normal text-xs ml-1">all time</span>
+            </div>
           </div>
-
-          {/* Cash / Invested split */}
-          <div className="flex gap-3 mt-4 text-xs">
-            <div className="flex-1 bg-white/10 rounded-xl p-2.5">
-              <p className="opacity-70">Cash</p>
-              <p className="font-extrabold text-sm">${fmt(portfolio.cash)}</p>
-            </div>
-            <div className="flex-1 bg-white/10 rounded-xl p-2.5">
-              <p className="opacity-70">Invested</p>
-              <p className="font-extrabold text-sm">${fmt(holdingsValue)}</p>
-            </div>
-            <div className="flex-1 bg-white/10 rounded-xl p-2.5">
-              <p className="opacity-70">Assets</p>
-              <p className="font-extrabold text-sm">{Object.keys(portfolio.holdings).length}</p>
+          <div className="flex flex-col items-end gap-1.5">
+            <button onClick={loadPrices} className="p-2 rounded-xl bg-muted text-muted-foreground active:scale-95">
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <div className="flex items-center gap-1 bg-muted rounded-xl px-2.5 py-1.5">
+              <Star className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs font-extrabold text-foreground">{score.score}</span>
+              <span className={`text-xs font-extrabold ${getGradeColor(score.grade)}`}>{score.grade}</span>
             </div>
           </div>
         </div>
 
-        {lastUpdated && (
-          <p className="text-[10px] text-muted-foreground text-right mb-2">
-            Prices updated {lastUpdated.toLocaleTimeString()}
-          </p>
-        )}
+        <div className="flex items-center gap-4 mb-3 text-xs text-muted-foreground">
+          <span>vs S&P 500: <span className={spyReturn >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>{spyReturn >= 0 ? '+' : ''}{spyReturn.toFixed(2)}%</span></span>
+          <span>Cash: <span className="text-foreground font-bold">${cash.toFixed(2)}</span></span>
+          {myRank && <span>Rank: <span className="text-primary font-bold">#{myRank}</span></span>}
+        </div>
+
+        <div className="h-28">
+          <PortfolioChart history={history} startingCash={STARTING_CASH} />
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="px-4">
-        <div className="flex bg-muted rounded-2xl p-1 mb-4">
-          {[
-            { id: 'market', label: 'Market' },
-            { id: 'holdings', label: 'Holdings' },
-            { id: 'history', label: 'History' },
-          ].map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 py-2 text-sm font-bold rounded-xl transition-all ${
-                tab === t.id ? 'bg-card text-foreground shadow' : 'text-muted-foreground'
-              }`}
-            >
-              {t.label}
-              {t.id === 'holdings' && Object.keys(portfolio.holdings).length > 0 && (
-                <span className="ml-1 text-[10px] font-extrabold text-primary">
-                  {Object.keys(portfolio.holdings).length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+      <div className="flex border-b border-border bg-card px-4">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex-1 py-3 text-xs font-extrabold uppercase tracking-wide transition-all border-b-2 ${tab === t.id ? 'text-primary border-primary' : 'text-muted-foreground border-transparent'}`}>
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <AnimatePresence mode="wait">
+        {/* ─── MARKET ─── */}
         {tab === 'market' && (
-          <motion.div key="market" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-4">
-            {/* Search */}
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search stocks, ETFs, crypto..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full h-10 bg-muted rounded-xl pl-9 pr-4 text-sm text-foreground outline-none"
-              />
+          <motion.div key="market" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <MarketMood prices={prices} />
+              <button onClick={() => setSortByMovers(v => !v)}
+                className={`text-xs font-bold px-3 py-1.5 rounded-xl ${sortByMovers ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                Top Movers
+              </button>
             </div>
 
-            {loading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="h-16 bg-muted rounded-2xl animate-pulse" />
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {/* Group by type */}
-                {['stock', 'etf', 'crypto'].map(type => {
-                  const typeAssets = filteredAssets.filter(a => a.type === type);
-                  if (typeAssets.length === 0) return null;
-                  return (
-                    <div key={type}>
-                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground mb-1.5 mt-2">
-                        {type === 'stock' ? 'Stocks' : type === 'etf' ? 'ETFs' : 'Crypto'}
-                      </p>
-                      {typeAssets.map(asset => {
-                        const p = prices[asset.id] ?? {};
-                        const held = portfolio.holdings[asset.id];
-                        const heldValue = held ? held.qty * (p.price ?? 0) : 0;
-                        const pnl = held ? heldValue - held.qty * held.avgCost : 0;
-                        return (
-                          <button
-                            key={asset.id}
-                            onClick={() => setTradeAsset(asset)}
-                            className="w-full bg-card border border-border rounded-2xl p-3.5 flex items-center gap-3 text-left active:scale-[0.98] transition-all hover:border-primary/30"
-                          >
-                            <span className="text-2xl shrink-0">{asset.emoji}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <span className="font-extrabold text-sm text-foreground">{asset.symbol}</span>
-                                <span className="font-extrabold text-sm text-foreground">
-                                  {p.price ? `$${fmt(p.price)}` : '—'}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between mt-0.5">
-                                <span className="text-xs text-muted-foreground truncate">{asset.name}</span>
-                                {p.change !== undefined && <MiniChange change={p.change} />}
-                              </div>
-                              {held && held.qty > 0 && (
-                                <div className={`text-[10px] font-bold mt-0.5 ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                  {held.qty} held · {pnl >= 0 ? '+' : ''}${fmt(pnl)} P&L
-                                </div>
-                              )}
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {tab === 'holdings' && (
-          <motion.div key="holdings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-4">
-            {Object.keys(portfolio.holdings).length === 0 ? (
-              <div className="text-center py-16">
-                <span className="text-5xl mb-4 block">📊</span>
-                <p className="font-extrabold text-foreground mb-2">No positions yet</p>
-                <p className="text-sm text-muted-foreground">Tap Market to buy your first asset</p>
-                <button onClick={() => setTab('market')} className="mt-4 text-sm font-bold text-primary">
-                  Browse Market →
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {Object.entries(portfolio.holdings)
-                  .filter(([, h]) => h.qty > 0)
-                  .map(([id, holding]) => {
-                    const asset = getAssetById(id);
-                    if (!asset) return null;
-                    const price = prices[id]?.price ?? 0;
-                    const currentValue = holding.qty * price;
-                    const costBasis = holding.qty * holding.avgCost;
-                    const pnl = currentValue - costBasis;
-                    const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+            {/* Hot movers chips */}
+            {!loading && hotMovers.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">🔥 Hot Today</p>
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {hotMovers.map(asset => {
+                    const p = prices[asset.id];
+                    const up = (p?.change ?? 0) >= 0;
                     return (
-                      <button
-                        key={id}
-                        onClick={() => setTradeAsset(asset)}
-                        className="w-full bg-card border border-border rounded-2xl p-4 text-left active:scale-[0.98]"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{asset.emoji}</span>
-                          <div className="flex-1">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="font-extrabold text-sm text-foreground">{asset.name}</p>
-                                <p className="text-xs text-muted-foreground">{holding.qty} {asset.symbol} · avg ${fmt(holding.avgCost)}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="font-extrabold text-sm text-foreground">${fmt(currentValue)}</p>
-                                <p className={`text-xs font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                  {pnl >= 0 ? '+' : ''}{fmt(pnl)} ({fmtPct(pnlPct)})
-                                </p>
-                              </div>
-                            </div>
-                            {/* P&L bar */}
-                            <div className="mt-2 h-1 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${pnl >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`}
-                                style={{ width: `${Math.min(100, Math.abs(pnlPct))}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
+                      <button key={asset.id} onClick={() => setTradeAsset(asset)}
+                        className="flex-shrink-0 bg-card border border-border rounded-2xl p-3 min-w-[84px] active:scale-95 transition-all text-left">
+                        <p className="text-xl mb-0.5">{asset.emoji}</p>
+                        <p className="text-xs font-extrabold text-foreground">{asset.symbol}</p>
+                        <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{up ? '+' : ''}{p?.change?.toFixed(2) ?? '—'}%</p>
                       </button>
                     );
                   })}
+                </div>
+              </div>
+            )}
 
-                {/* Cash card */}
-                <div className="bg-card border border-border rounded-2xl p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">💵</span>
-                    <div className="flex-1">
-                      <p className="font-extrabold text-sm text-foreground">Cash</p>
-                      <p className="text-xs text-muted-foreground">Available to invest</p>
+            {/* Sector filter */}
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-3 no-scrollbar">
+              {allSectors.map(s => (
+                <button key={s} onClick={() => setSector(s)}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-extrabold transition-all ${sector === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                  {s === 'Watchlist' ? `⭐ ${s}` : s}
+                </button>
+              ))}
+            </div>
+
+            {/* Asset list */}
+            {loading ? (
+              <div className="space-y-2">{Array.from({ length: 7 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-2xl animate-pulse" />)}</div>
+            ) : (
+              <div className="space-y-1.5">
+                {filteredAssets.map(asset => {
+                  const pd = prices[asset.id];
+                  const up = (pd?.change ?? 0) >= 0;
+                  const held = holdings.some(h => h.assetId === asset.id);
+                  const watched = watchlist.includes(asset.id);
+                  return (
+                    <div key={asset.id} className="flex items-center gap-3 bg-card border border-border rounded-2xl px-3 py-3 transition-all">
+                      <span className="text-xl shrink-0">{asset.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-extrabold text-foreground">{asset.symbol}</p>
+                          {held && <span className="text-[9px] font-extrabold bg-primary/15 text-primary rounded px-1 py-0.5">HELD</span>}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{asset.name}</p>
+                      </div>
+                      <Sparkline points={pd?.points} positive={up} width={52} height={26} />
+                      <div className="text-right shrink-0 min-w-[68px]">
+                        <p className="text-sm font-extrabold text-foreground">${pd?.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: pd?.price >= 100 ? 2 : 4 }) ?? '—'}</p>
+                        <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{up ? '+' : ''}{pd?.change?.toFixed(2) ?? '—'}%</p>
+                      </div>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button onClick={() => setTradeAsset(asset)}
+                          className="bg-primary text-primary-foreground rounded-lg px-2.5 py-1 text-xs font-extrabold active:scale-95">
+                          Trade
+                        </button>
+                        <button onClick={() => toggleWatchlist(asset.id)}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-extrabold active:scale-95 ${watched ? 'bg-amber-400/20 text-amber-400' : 'bg-muted text-muted-foreground'}`}>
+                          {watched ? '⭐' : '☆'}
+                        </button>
+                      </div>
                     </div>
-                    <p className="font-extrabold text-sm text-foreground">${fmt(portfolio.cash)}</p>
+                  );
+                })}
+                {filteredAssets.length === 0 && (
+                  <p className="text-center text-muted-foreground text-sm py-8">
+                    {sector === 'Watchlist' ? 'No assets watchlisted. Tap ☆ to add.' : 'No assets here.'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* News */}
+            <div className="mt-6 mb-2">
+              <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">Market News</p>
+              <div className="space-y-2">
+                {Object.entries(NEWS).map(([sec, articles]) => (
+                  <div key={sec} className="bg-card border border-border rounded-2xl overflow-hidden">
+                    <button onClick={() => setExpandedNews(expandedNews === sec ? null : sec)}
+                      className="w-full flex items-center justify-between px-4 py-3 active:scale-[0.99]">
+                      <p className="text-sm font-extrabold text-foreground">{sec}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{articles.length} stories</span>
+                        {expandedNews === sec ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </button>
+                    <AnimatePresence>
+                      {expandedNews === sec && (
+                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} style={{ overflow: 'hidden' }}>
+                          <div className="px-4 pb-3 space-y-2 border-t border-border">
+                            {articles.map((a, i) => (
+                              <div key={i} className="flex items-start gap-2 pt-2">
+                                <span className="text-sm mt-0.5">{a.sentiment === 'up' ? '📈' : '📉'}</span>
+                                <div>
+                                  <p className="text-xs text-foreground font-semibold">{a.title}</p>
+                                  <p className="text-[10px] text-muted-foreground">{a.time}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ─── HOLDINGS ─── */}
+        {tab === 'holdings' && (
+          <motion.div key="holdings" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pt-4">
+            {/* Score card */}
+            <div className="bg-card border border-border rounded-2xl p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-xs text-muted-foreground font-bold uppercase tracking-wide">Investor Rating</p>
+                  <div className="flex items-baseline gap-1.5 mt-0.5">
+                    <span className="text-3xl font-extrabold text-foreground">{score.score}</span>
+                    <span className={`text-xl font-extrabold ${getGradeColor(score.grade)}`}>{score.grade}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{score.label}</p>
+                </div>
+                <span className="text-4xl">{score.grade === 'S' ? '👑' : score.grade === 'A' ? '🏆' : score.grade === 'B' ? '🥈' : '📈'}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Diversification', val: score.diversityScore, max: 35 },
+                  { label: 'Performance', val: Math.round(score.perfScore), max: 35 },
+                  { label: 'Activity', val: score.activityScore, max: 20 },
+                  { label: 'Consistency', val: score.historyScore, max: 10 },
+                ].map(m => (
+                  <div key={m.label} className="bg-muted rounded-xl p-2.5">
+                    <div className="flex justify-between mb-1">
+                      <p className="text-[10px] font-bold text-muted-foreground">{m.label}</p>
+                      <p className="text-[10px] font-extrabold text-foreground">{m.val}/{m.max}</p>
+                    </div>
+                    <div className="h-1.5 bg-background rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${(m.val / m.max) * 100}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {holdings.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-4xl mb-3">💼</p>
+                <p className="font-extrabold text-foreground mb-1">No holdings yet</p>
+                <p className="text-sm text-muted-foreground">Go to Market and make your first trade!</p>
+                <button onClick={() => setTab('market')} className="mt-4 bg-primary text-primary-foreground rounded-xl px-6 py-2.5 text-sm font-extrabold active:scale-95">Browse Market</button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between px-1 mb-2">
+                  <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide">{holdings.length} Positions</p>
+                  <p className="text-xs text-muted-foreground">Cash: ${cash.toFixed(2)}</p>
+                </div>
+                <div className="space-y-2">
+                  {holdings.map(h => {
+                    const asset = ASSETS.find(a => a.id === h.assetId);
+                    if (!asset) return null;
+                    const pd = prices[h.assetId];
+                    const cur = pd?.price ?? h.avgCost;
+                    const value = cur * h.shares;
+                    const cost = h.avgCost * h.shares;
+                    const gain = value - cost;
+                    const gainPct = (gain / cost) * 100;
+                    const up = gain >= 0;
+                    return (
+                      <div key={h.assetId} className="bg-card border border-border rounded-2xl p-4">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-xl">{asset.emoji}</span>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <p className="font-extrabold text-foreground text-sm">{asset.symbol} <span className="text-muted-foreground font-normal text-xs">{asset.name}</span></p>
+                              <p className="font-extrabold text-foreground">${value.toFixed(2)}</p>
+                            </div>
+                            <div className="flex items-center justify-between mt-0.5">
+                              <p className="text-xs text-muted-foreground">{h.shares.toFixed(6)} shares</p>
+                              <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {up ? '+' : ''}${gain.toFixed(2)} ({up ? '+' : ''}{gainPct.toFixed(2)}%)
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-muted-foreground">Avg ${h.avgCost.toFixed(2)} · Now ${cur.toFixed(2)}</div>
+                          <div className="flex items-center gap-2">
+                            <Sparkline points={pd?.points} positive={up} width={44} height={20} />
+                            <button onClick={() => setTradeAsset(asset)}
+                              className="bg-muted text-foreground rounded-lg px-2.5 py-1 text-xs font-extrabold active:scale-95">Trade</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Trade history */}
+            {(portfolio?.trades?.length ?? 0) > 0 && (
+              <div className="mt-6">
+                <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">Trade History</p>
+                <div className="space-y-1.5">
+                  {[...(portfolio?.trades ?? [])].reverse().slice(0, 10).map((t, i) => {
+                    const asset = ASSETS.find(a => a.id === t.assetId);
+                    return (
+                      <div key={i} className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-2.5">
+                        <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${t.type === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>{t.type.toUpperCase()}</span>
+                        <span className="text-sm">{asset?.emoji}</span>
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-foreground">{asset?.symbol} · {t.shares.toFixed(4)} shares</p>
+                          <p className="text-[10px] text-muted-foreground">@ ${t.price.toFixed(2)} · {new Date(t.ts).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
           </motion.div>
         )}
 
-        {tab === 'history' && (
-          <motion.div key="history" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-4">
-            {(portfolio.transactions ?? []).length === 0 ? (
-              <div className="text-center py-16">
-                <span className="text-5xl mb-4 block">📋</span>
-                <p className="font-extrabold text-foreground mb-2">No transactions yet</p>
-                <p className="text-sm text-muted-foreground">Your trades will appear here</p>
+        {/* ─── LEADERBOARD ─── */}
+        {tab === 'leaderboard' && (
+          <motion.div key="leaderboard" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pt-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Trophy className="w-5 h-5 text-amber-400" />
+              <h2 className="text-lg font-extrabold text-foreground">Portfolio Leaderboard</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">Ranked by portfolio value · Resets weekly</p>
+
+            {/* My rank */}
+            <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 mb-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-lg font-extrabold text-primary">#{myRank ?? '?'}</div>
+              <div className="flex-1">
+                <p className="font-extrabold text-foreground">You</p>
+                <p className="text-xs text-muted-foreground">Portfolio: ${totalValue.toFixed(2)}</p>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {(portfolio.transactions ?? []).map(tx => {
-                  const asset = getAssetById(tx.assetId);
-                  if (!asset) return null;
-                  const total = tx.qty * tx.price;
-                  const date = new Date(tx.ts);
-                  return (
-                    <div key={tx.id} className="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-3">
-                      <span className="text-xl">{asset.emoji}</span>
-                      <div className="flex-1">
-                        <div className="flex justify-between">
-                          <span className="font-bold text-sm text-foreground">{asset.symbol}</span>
-                          <span className={`text-xs font-extrabold ${tx.mode === 'buy' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            {tx.mode === 'buy' ? '▲ BUY' : '▼ SELL'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between mt-0.5">
-                          <span className="text-xs text-muted-foreground">
-                            {tx.qty} @ ${fmt(tx.price)} = ${fmt(total)}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {date.toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
+              <div className={`text-sm font-extrabold ${totalGain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {totalGain >= 0 ? '+' : ''}{totalGainPct.toFixed(1)}%
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {loading ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-2xl animate-pulse" />) : (
+                leaderboard.map((player, i) => (
+                  <div key={player.id} className="flex items-center gap-3 bg-card border border-border rounded-2xl px-4 py-3">
+                    <div className="w-7 text-center shrink-0">
+                      {i === 0 ? <Crown className="w-5 h-5 text-amber-400 mx-auto" />
+                        : i === 1 ? <span className="text-sm">🥈</span>
+                        : i === 2 ? <span className="text-sm">🥉</span>
+                        : <span className="text-xs font-extrabold text-muted-foreground">#{i + 1}</span>}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <span className="text-xl shrink-0">{player.avatar}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-extrabold text-foreground">{player.name}</p>
+                        <span className="text-sm">{player.badge}</span>
+                      </div>
+                      {player.topHolding && (
+                        <p className="text-xs text-muted-foreground">Top: {player.topHolding.emoji} {player.topHolding.symbol}</p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-extrabold text-foreground">${player.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      <p className={`text-xs font-bold ${player.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {player.returnPct >= 0 ? '+' : ''}{player.returnPct.toFixed(1)}%
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-6 bg-muted rounded-2xl p-4 text-center">
+              <p className="text-sm font-extrabold text-foreground mb-1">How to climb</p>
+              <p className="text-xs text-muted-foreground">Buy diversified assets, hold through gains, and grow your total portfolio value to beat the leaderboard.</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -588,13 +728,8 @@ export default function Portfolio() {
       {/* Trade Modal */}
       <AnimatePresence>
         {tradeAsset && (
-          <TradeModal
-            asset={tradeAsset}
-            price={prices[tradeAsset.id]?.price ?? 0}
-            portfolio={portfolio}
-            onClose={() => setTradeAsset(null)}
-            onTrade={handleTrade}
-          />
+          <TradeModal asset={tradeAsset} price={prices[tradeAsset.id]?.price ?? 0}
+            cash={cash} onClose={() => setTradeAsset(null)} onTrade={handleTrade} />
         )}
       </AnimatePresence>
     </div>
