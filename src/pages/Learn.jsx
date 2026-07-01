@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Star, Zap, Flame, Heart, ChevronRight, BookOpen, Swords } from 'lucide-react';
+import { Lock, Star, Zap, Flame, Heart, ChevronRight, BookOpen, Swords, Eye } from 'lucide-react';
 import { LESSON_COLORS, isLessonUnlocked, getLessonStars, TOTAL_LESSONS, UNITS } from '@/lib/unitData';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { getXpProgress } from '@/lib/levelData';
@@ -183,6 +183,18 @@ export default function Learn() {
             </div>
           </div>
           <XpBar xp={xp} showLabel={false} compact />
+          {/* Near-miss level nudge */}
+          {(() => {
+            const { xpInLevel, xpNeeded, current } = getXpProgress(xp);
+            const remaining = xpNeeded - xpInLevel;
+            if (current.maxXp === Infinity || remaining > 120) return null;
+            return (
+              <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                className="text-[10px] font-extrabold text-amber-500 mt-1 text-right">
+                ⚡ Only {remaining} XP to {UNITS.find(() => true)?.emoji ?? '🏆'} Level {current.level + 1}!
+              </motion.p>
+            );
+          })()}
         </div>
 
         {/* Daily missions */}
@@ -201,10 +213,77 @@ export default function Learn() {
             return completedLessons.includes(prevUnit.lessons[prevUnit.lessons.length - 1].id);
           })();
 
+          // ── LOCKED UNIT — mysterious teaser ──────────────────────
+          if (!unitUnlocked) {
+            // Fake learner counts seeded per unit for social proof
+            const fakeCount = 1200 + (unitIdx * 347 + 89) % 3800;
+            const teaserTerms = unit.lessons.flatMap(l => l.terms).slice(0, 4);
+            return (
+              <div key={unit.id} className="mx-4 mt-5 mb-2">
+                <div className="relative rounded-2xl overflow-hidden border border-white/5">
+                  {/* Dark gradient background */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
+                  {/* Colour tint */}
+                  <div className={`absolute inset-0 opacity-10 ${unitColors.bg}`} />
+
+                  {/* Blurred ghost lesson nodes — curiosity bait */}
+                  <div className="absolute inset-0 flex items-center justify-around px-6 pt-8 pb-4 pointer-events-none select-none">
+                    {unit.lessons.map((_, i) => (
+                      <div key={i} className="flex flex-col items-center gap-2 opacity-25 blur-[3px]">
+                        <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl">
+                          {unit.emoji}
+                        </div>
+                        <div className="w-10 h-1.5 rounded-full bg-white/20" />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Scanline overlay for mystery */}
+                  <div className="absolute inset-0 opacity-5"
+                    style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 4px)' }} />
+
+                  {/* Content */}
+                  <div className="relative px-4 py-5 flex flex-col items-center text-center">
+                    <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 mb-3">
+                      <Lock className="w-3 h-3 text-white/60" />
+                      <span className="text-white/60 text-[10px] font-extrabold uppercase tracking-wider">Section {unitIdx + 1} Locked</span>
+                    </div>
+
+                    <div className="text-4xl mb-2 opacity-70">{'?'.repeat(1)}</div>
+                    <h3 className="text-white font-extrabold text-base mb-1">{unit.title}</h3>
+                    <p className="text-white/50 text-xs mb-3">{unit.subtitle}</p>
+
+                    {/* Teaser pills */}
+                    <div className="flex flex-wrap gap-1.5 justify-center mb-4">
+                      {teaserTerms.map(t => (
+                        <span key={t} className="bg-white/10 text-white/40 text-[10px] font-bold px-2 py-0.5 rounded-full blur-[2px] select-none">
+                          {t.replace(/-/g, ' ')}
+                        </span>
+                      ))}
+                      <span className="bg-white/10 text-white/40 text-[10px] font-bold px-2 py-0.5 rounded-full">+more</span>
+                    </div>
+
+                    {/* Social proof */}
+                    <div className="flex items-center gap-1.5 text-white/40 text-[10px] font-bold mb-4">
+                      <Eye className="w-3 h-3" />
+                      <span>{fakeCount.toLocaleString()} learners have unlocked this</span>
+                    </div>
+
+                    {/* What you need to do */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/50 font-semibold">
+                      Complete <span className="text-white/80 font-extrabold">{UNITS[unitIdx - 1]?.title}</span> to unlock
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // ── UNLOCKED UNIT — normal render ─────────────────────────
           return (
             <div key={unit.id} className="mb-2">
               {/* Unit section banner */}
-              <div className={`mx-4 mt-5 rounded-2xl overflow-hidden`}>
+              <div className="mx-4 mt-5 rounded-2xl overflow-hidden">
                 <div className={`${unitColors.bg} px-4 py-4 flex items-center justify-between`}>
                   <div className="flex items-center gap-3">
                     <span className="text-3xl">{unit.emoji}</span>
@@ -218,30 +297,26 @@ export default function Learn() {
                   </div>
                   <div className="text-right shrink-0 flex flex-col items-end gap-1">
                     <p className="text-xs font-bold text-white/70">{unitCompleted}/{unitTotal}</p>
-                    {unitDone ? (
+                    {unitDone && (
                       <Link to={`/boss/${unit.id}`} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded-xl px-2.5 py-1 transition-all active:scale-95">
                           <Swords className="w-3.5 h-3.5 text-white" />
                           <span className="text-white font-extrabold text-xs">
-                            {(bossWins[unit.id] ?? 0) > 0 ? `Boss ✓` : 'Boss!'}
+                            {(bossWins[unit.id] ?? 0) > 0 ? 'Boss ✓' : 'Boss!'}
                           </span>
                         </div>
                       </Link>
-                    ) : null}
+                    )}
                   </div>
                 </div>
-                {/* Unit progress bar */}
                 <div className={`h-1 ${unitColors.light}`}>
-                  <div
-                    className={`h-full ${unitColors.bg} transition-all duration-500`}
-                    style={{ width: `${(unitCompleted / unitTotal) * 100}%` }}
-                  />
+                  <div className={`h-full ${unitColors.bg} transition-all duration-500`}
+                    style={{ width: `${(unitCompleted / unitTotal) * 100}%` }} />
                 </div>
               </div>
 
-              {/* Lesson nodes in zig-zag path inside this unit */}
+              {/* Lesson nodes */}
               <div className="relative px-4 pt-6 pb-4">
-                {/* Connector lines between nodes */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
                   {unit.lessons.map((lesson, lessonIdx) => {
                     if (lessonIdx === 0) return null;
@@ -250,33 +325,26 @@ export default function Learn() {
                     const prevX = (lessonIdx - 1) * colWidth + nodeSize / 2 + 16 + (OFFSETS[(lessonIdx - 1) % OFFSETS.length] ?? 0);
                     const currX = lessonIdx * colWidth + nodeSize / 2 + 16 + (OFFSETS[lessonIdx % OFFSETS.length] ?? 0);
                     return (
-                      <line
-                        key={lesson.id}
-                        x1={prevX} y1={50}
-                        x2={currX} y2={50}
-                        strokeWidth="2"
-                        strokeDasharray="4 3"
+                      <line key={lesson.id}
+                        x1={prevX} y1={50} x2={currX} y2={50}
+                        strokeWidth="2" strokeDasharray="4 3"
                         className={completedLessons.includes(lesson.id) ? 'stroke-muted-foreground/40' : 'stroke-muted-foreground/20'}
                       />
                     );
                   })}
                 </svg>
-
-                {/* Node row */}
                 <div className="flex items-start justify-around relative z-10">
                   {unit.lessons.map((lesson, lessonIdx) => {
                     const completed = completedLessons.includes(lesson.id);
-                    const unlocked = unitUnlocked && isLessonUnlocked(lesson.id, completedLessons);
+                    const unlocked = isLessonUnlocked(lesson.id, completedLessons);
                     const isNext = !completed && unlocked;
                     const stars = getLessonStars(lesson.id, lessonStars);
-                    const colors = unitColors;
                     const marginOffset = OFFSETS[lessonIdx % OFFSETS.length] ?? 0;
-
                     return (
                       <div key={lesson.id} className="relative flex flex-col items-center" style={{ marginTop: Math.abs(marginOffset) * 0.3 }}>
                         <LessonNode
                           lesson={lesson}
-                          colors={colors}
+                          colors={unitColors}
                           completed={completed}
                           isNext={isNext}
                           unlocked={unlocked}
