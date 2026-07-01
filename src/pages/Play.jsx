@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
-import { Calendar, Swords, Award, ChevronRight, CheckCircle2, Lock, Flame, ShoppingBag, GitBranch, RotateCcw } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronRight, CheckCircle2, Lock, Zap, Crown } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { getTodayKey } from '@/lib/dailyChallengeData';
 import { LESSONS } from '@/lib/lessonData';
@@ -16,13 +16,16 @@ export default function Play() {
   const [showChest, setShowChest] = useState(false);
   const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('play');
 
-  const dailyDone = progress?.daily_challenge_date === getTodayKey();
-  const hearts = progress?.hearts ?? 5;
-  const allLessonsDone = (progress?.completed_lessons ?? []).length === LESSONS.length;
+  const dailyDone   = progress?.daily_challenge_date === getTodayKey();
+  const hearts      = progress?.hearts ?? 5;
+  const allDone     = (progress?.completed_lessons ?? []).length === LESSONS.length;
   const attemptsLeft = 3 - (progress?.exam_attempts ?? 0);
-  const bestScore = progress?.exam_best_score;
-  const dueReviews = getDueCount();
+  const bestScore   = progress?.exam_best_score;
+  const dueReviews  = getDueCount();
   const pendingChests = getPendingChests();
+  const streak      = progress?.streak_days ?? 0;
+  const xp          = progress?.xp ?? 0;
+  const coins       = progress?.coins ?? 0;
 
   function handleChestReward(reward) {
     updateProgress({
@@ -32,138 +35,223 @@ export default function Play() {
     toast.success(`${reward.emoji} ${reward.label} chest: +${reward.xp} XP, +${reward.coins} coins!`);
   }
 
-  const toolCards = [
-    { to: '/glossary',     icon: '🔍', label: 'Glossary',     sub: 'Search all 131 financial terms' },
-    { to: '/calculators',  icon: '🧮', label: 'Calculators',  sub: 'Compound interest, mortgage, savings' },
-  ];
-
-  const primaryModes = [
-    {
-      to: '/daily', icon: '📅', label: 'Daily Challenge',
-      sub: dailyDone ? 'Completed today ✓' : '+50 XP · +$20 · 5 questions',
-      badge: !dailyDone ? 'NEW' : null, done: dailyDone,
-      color: dailyDone ? 'bg-card border-border' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700',
-    },
-    {
-      to: '/scenarios', icon: '🧠', label: 'Scenarios',
-      sub: 'Branching financial decisions · +60 XP each',
-      badge: null, color: 'bg-card border-border',
-    },
-    {
-      to: '/practice', icon: '⚔️', label: 'Practice Quiz',
-      sub: hearts > 0 ? `${hearts}❤️ remaining · Combo XP bonus` : 'Out of hearts — refill in Shop',
-      locked: hearts === 0, color: 'bg-card border-border',
-    },
-    {
-      to: '/review', icon: '🔄', label: 'Spaced Review',
-      sub: dueReviews > 0 ? `${dueReviews} term${dueReviews > 1 ? 's' : ''} due for review` : 'All caught up — come back tomorrow',
-      badge: dueReviews > 0 ? String(dueReviews) : null,
-      badgeColor: 'bg-rose-500',
-      color: dueReviews > 0 ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800' : 'bg-card border-border',
-    },
-    {
-      to: '/flashcards', icon: '📖', label: 'Flashcards',
-      sub: `${progress?.mastered_terms?.length ?? 0} terms mastered`,
-      color: 'bg-card border-border',
-    },
-    {
-      to: '/exam', icon: '🎓', label: 'Final Exam',
-      sub: allLessonsDone
-        ? bestScore != null ? `Best: ${bestScore}% · ${attemptsLeft} attempt${attemptsLeft !== 1 ? 's' : ''} left` : `${attemptsLeft} attempts left`
-        : 'Complete all lessons to unlock',
-      done: bestScore >= 75, locked: !allLessonsDone,
-      color: allLessonsDone ? 'bg-card border-border' : 'bg-muted/50 border-border',
-    },
-  ];
-
   return (
-    <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto px-4 pt-6">
+    <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto">
 
-      {/* Pending chest banner */}
-      {pendingChests > 0 && (
-        <button onClick={() => setShowChest(true)}
-          className="w-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl p-4 flex items-center gap-3 mb-4 text-left active:scale-[0.99] transition-all shadow-lg">
-          <span className="text-3xl">📦</span>
-          <div className="flex-1">
-            <p className="font-extrabold text-white text-sm">
-              {pendingChests} Reward Chest{pendingChests > 1 ? 's' : ''} ready!
-            </p>
-            <p className="text-white/80 text-xs">Tap to open and claim your prizes</p>
+      {/* ─── Hero header ─── */}
+      <div className="bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 px-4 pt-10 pb-6">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-white/70 text-xs font-bold uppercase tracking-widest">Game Hub</p>
+            <p className="text-white text-2xl font-extrabold mt-0.5">Play</p>
           </div>
-          <ChevronRight className="w-5 h-5 text-white shrink-0" />
-        </button>
-      )}
-
-      {/* Streak reminder */}
-      {(progress?.streak_days ?? 0) > 0 && (
-        <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-4 py-3 mb-4">
-          <Flame className="w-5 h-5 text-amber-500" />
-          <p className="text-sm font-bold text-amber-800 dark:text-amber-300">
-            {progress.streak_days}-day streak! Keep it going.
-          </p>
-          <Link to="/shop" className="ml-auto text-xs font-extrabold text-amber-700 dark:text-amber-400">
-            Shop →
+          <Link to="/shop">
+            <div className="flex items-center gap-1.5 bg-white/15 rounded-2xl px-3.5 py-2 active:scale-95 transition-all">
+              <span className="text-base">🛒</span>
+              <span className="text-white font-extrabold text-sm">Shop</span>
+            </div>
           </Link>
         </div>
-      )}
 
-      <div className="flex items-center justify-between mb-3">
-        <h1 className="text-xl font-extrabold text-foreground">Play</h1>
-        <Link to="/shop" className="flex items-center gap-1.5 bg-amber-400 text-white px-3 py-1.5 rounded-xl text-xs font-extrabold active:scale-95">
-          <ShoppingBag className="w-3.5 h-3.5" /> Shop
-        </Link>
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { emoji: '🔥', val: `${streak}d`, label: 'Streak' },
+            { emoji: '⚡', val: xp.toLocaleString(), label: 'XP' },
+            { emoji: '💰', val: coins.toLocaleString(), label: 'Coins' },
+          ].map(s => (
+            <div key={s.label} className="bg-white/10 rounded-2xl p-3 text-center">
+              <p className="text-xl mb-0.5">{s.emoji}</p>
+              <p className="text-white font-extrabold text-sm">{s.val}</p>
+              <p className="text-white/60 text-[10px] font-bold uppercase tracking-wide">{s.label}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-2.5">
-        {primaryModes.map((m) => (
-          <Link key={m.to} to={m.locked ? '#' : m.to} className={m.locked ? 'pointer-events-none' : ''}>
-            <div className={`rounded-2xl border p-4 flex items-center gap-4 transition-all ${m.color} ${!m.locked ? 'active:scale-[0.98]' : 'opacity-50'}`}>
-              <div className="w-11 h-11 rounded-2xl bg-muted flex items-center justify-center text-2xl shrink-0">
-                {m.icon}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-extrabold text-foreground">{m.label}</p>
-                  {m.badge && (
-                    <span className={`text-[10px] font-extrabold text-white px-1.5 py-0.5 rounded-full ${m.badgeColor ?? 'bg-amber-400'}`}>{m.badge}</span>
-                  )}
-                  {m.done && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
+      <div className="px-4 pt-5 space-y-5">
+
+        {/* ─── Pending chest banner ─── */}
+        {pendingChests > 0 && (
+          <motion.button
+            initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+            onClick={() => setShowChest(true)}
+            className="w-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl p-4 flex items-center gap-3 active:scale-[0.98] transition-all shadow-lg">
+            <span className="text-3xl">📦</span>
+            <div className="flex-1 text-left">
+              <p className="font-extrabold text-white text-sm">{pendingChests} Reward Chest{pendingChests > 1 ? 's' : ''} waiting!</p>
+              <p className="text-white/80 text-xs">Tap to open and claim your prizes</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-white shrink-0" />
+          </motion.button>
+        )}
+
+        {/* ─── Daily Challenge (hero card) ─── */}
+        <Link to="/daily">
+          <div className={`rounded-3xl p-5 flex items-center gap-4 active:scale-[0.98] transition-all shadow-sm ${
+            dailyDone
+              ? 'bg-card border border-border'
+              : 'bg-gradient-to-r from-amber-400 to-orange-500 shadow-lg shadow-orange-500/20'
+          }`}>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 ${
+              dailyDone ? 'bg-muted' : 'bg-white/25'
+            }`}>
+              📅
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`font-extrabold text-base ${dailyDone ? 'text-foreground' : 'text-white'}`}>Daily Challenge</p>
+              <p className={`text-xs mt-0.5 ${dailyDone ? 'text-muted-foreground' : 'text-white/80'}`}>
+                {dailyDone ? 'Completed today ✓ — come back tomorrow' : '5 questions · +50 XP · +$20 coins'}
+              </p>
+            </div>
+            {dailyDone
+              ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+              : <div className="bg-white/20 rounded-xl px-2.5 py-1 shrink-0">
+                  <p className="text-white font-extrabold text-xs">NEW</p>
                 </div>
-                <p className="text-xs text-muted-foreground">{m.sub}</p>
+            }
+          </div>
+        </Link>
+
+        {/* ─── PLAY section ─── */}
+        <div>
+          <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-2 px-1">⚔️ Play Modes</p>
+          <div className="space-y-2">
+            {/* Scenarios */}
+            <Link to="/scenarios">
+              <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4 active:scale-[0.98] transition-all">
+                <div className="w-12 h-12 rounded-2xl bg-violet-500/15 flex items-center justify-center text-2xl shrink-0">🧠</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-extrabold text-foreground text-sm">Scenarios</p>
+                  <p className="text-xs text-muted-foreground">Branching decisions · +60 XP each</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
               </div>
-              {m.locked ? <Lock className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
-            </div>
-          </Link>
-        ))}
-      </div>
+            </Link>
 
-      {/* Tools row */}
-      <div className="flex gap-2.5 mt-1 mb-1">
-        {toolCards.map(t => (
-          <Link key={t.to} to={t.to} className="flex-1">
-            <div className="bg-card border border-border rounded-2xl p-3.5 flex flex-col gap-1.5 active:scale-95 transition-all">
-              <span className="text-2xl">{t.icon}</span>
-              <p className="font-extrabold text-xs text-foreground">{t.label}</p>
-              <p className="text-[10px] text-muted-foreground leading-tight">{t.sub}</p>
-            </div>
-          </Link>
-        ))}
-      </div>
+            {/* Practice Quiz */}
+            <Link to={hearts === 0 ? '#' : '/practice'} className={hearts === 0 ? 'pointer-events-none' : ''}>
+              <div className={`bg-card border border-border rounded-2xl p-4 flex items-center gap-4 transition-all ${hearts > 0 ? 'active:scale-[0.98]' : 'opacity-50'}`}>
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 flex items-center justify-center text-2xl shrink-0">⚔️</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-extrabold text-foreground text-sm">Practice Quiz</p>
+                  <p className="text-xs text-muted-foreground">
+                    {hearts > 0
+                      ? `${hearts}❤️ remaining · Combo XP bonus`
+                      : 'Out of hearts — refill in Shop'}
+                  </p>
+                </div>
+                {hearts === 0
+                  ? <Lock className="w-4 h-4 text-muted-foreground shrink-0" />
+                  : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+              </div>
+            </Link>
+          </div>
+        </div>
 
-      {/* Stats row */}
-      <div className="mt-5 grid grid-cols-3 gap-2">
-        <div className="bg-card border border-border rounded-2xl p-3 text-center">
-          <p className="text-lg font-extrabold text-foreground">{bestScore != null ? `${bestScore}%` : '—'}</p>
-          <p className="text-[10px] text-muted-foreground uppercase font-bold">Best Exam</p>
+        {/* ─── STUDY section ─── */}
+        <div>
+          <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-2 px-1">📚 Study</p>
+          <div className="space-y-2">
+            {/* Spaced Review */}
+            <Link to="/review">
+              <div className={`rounded-2xl p-4 flex items-center gap-4 border active:scale-[0.98] transition-all ${
+                dueReviews > 0
+                  ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800'
+                  : 'bg-card border-border'
+              }`}>
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 flex items-center justify-center text-2xl shrink-0">🔄</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-extrabold text-foreground text-sm">Spaced Review</p>
+                    {dueReviews > 0 && (
+                      <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">{dueReviews}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {dueReviews > 0 ? `${dueReviews} term${dueReviews > 1 ? 's' : ''} due for review` : 'All caught up — come back tomorrow'}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </div>
+            </Link>
+
+            {/* Flashcards */}
+            <Link to="/flashcards">
+              <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4 active:scale-[0.98] transition-all">
+                <div className="w-12 h-12 rounded-2xl bg-blue-500/15 flex items-center justify-center text-2xl shrink-0">📖</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-extrabold text-foreground text-sm">Flashcards</p>
+                  <p className="text-xs text-muted-foreground">{progress?.mastered_terms?.length ?? 0} terms mastered</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </div>
+            </Link>
+
+            {/* Final Exam */}
+            <Link to={allDone ? '/exam' : '#'} className={!allDone ? 'pointer-events-none' : ''}>
+              <div className={`rounded-2xl p-4 flex items-center gap-4 border transition-all ${
+                allDone ? 'bg-card border-border active:scale-[0.98]' : 'bg-muted/40 border-border opacity-60'
+              }`}>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 ${
+                  allDone ? 'bg-amber-500/15' : 'bg-muted'
+                }`}>
+                  {bestScore >= 75 ? '🎓' : '📝'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-extrabold text-foreground text-sm">Final Exam</p>
+                    {bestScore >= 75 && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {allDone
+                      ? bestScore != null
+                        ? `Best: ${bestScore}% · ${attemptsLeft} attempt${attemptsLeft !== 1 ? 's' : ''} left`
+                        : `${attemptsLeft} attempts remaining`
+                      : 'Complete all lessons to unlock'}
+                  </p>
+                </div>
+                {!allDone
+                  ? <Lock className="w-4 h-4 text-muted-foreground shrink-0" />
+                  : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+              </div>
+            </Link>
+          </div>
         </div>
-        <div className="bg-card border border-border rounded-2xl p-3 text-center">
-          <p className="text-lg font-extrabold text-foreground">{progress?.streak_days ?? 0}d</p>
-          <p className="text-[10px] text-muted-foreground uppercase font-bold">Streak</p>
+
+        {/* ─── TOOLS section ─── */}
+        <div>
+          <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-2 px-1">🛠️ Tools</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/glossary">
+              <div className="bg-card border border-border rounded-2xl p-4 active:scale-95 transition-all">
+                <span className="text-2xl">🔍</span>
+                <p className="font-extrabold text-sm text-foreground mt-2">Glossary</p>
+                <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">Search 131 financial terms</p>
+              </div>
+            </Link>
+            <Link to="/calculators">
+              <div className="bg-card border border-border rounded-2xl p-4 active:scale-95 transition-all">
+                <span className="text-2xl">🧮</span>
+                <p className="font-extrabold text-sm text-foreground mt-2">Calculators</p>
+                <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">Compound interest, mortgage</p>
+              </div>
+            </Link>
+          </div>
         </div>
-        <div className="bg-card border border-border rounded-2xl p-3 text-center">
-          <p className="text-lg font-extrabold text-foreground">{progress?.practice_sessions ?? 0}</p>
-          <p className="text-[10px] text-muted-foreground uppercase font-bold">Sessions</p>
-        </div>
+
+        {/* ─── Pro upsell ─── */}
+        <Link to="/pro">
+          <div className="bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl p-4 flex items-center gap-3 active:scale-[0.98] transition-all">
+            <Crown className="w-6 h-6 text-white shrink-0" />
+            <div className="flex-1">
+              <p className="font-extrabold text-white text-sm">Upgrade to Pro</p>
+              <p className="text-white/80 text-xs">Unlimited hearts, XP boosts & more</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-white shrink-0" />
+          </div>
+        </Link>
+
       </div>
 
       <AnimatePresence>
