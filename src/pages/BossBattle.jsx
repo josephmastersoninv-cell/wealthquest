@@ -7,6 +7,7 @@ import { getTermById, GLOSSARY_TERMS } from '@/lib/glossaryData';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { applyStreakMultiplier } from '@/lib/streakMultiplier';
 import { incrementMissionCounter } from '@/lib/missionsData';
+import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { toast } from 'sonner';
 
 const BOSS_XP = 200;
@@ -54,6 +55,7 @@ export default function BossBattle() {
 
   const questions = useMemo(() => terms.map(t => buildQuestion(t, GLOSSARY_TERMS)), [terms]);
 
+  const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('boss');
   const [phase, setPhase] = useState('intro'); // intro | battle | results
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState(null);
@@ -247,6 +249,10 @@ export default function BossBattle() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {showIntro && <SectionIntro section="boss" onDismiss={dismissIntro} />}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,12 +1,14 @@
 export const LEVELS = [
-  { level: 1, title: 'Novice',       minXp: 0,    maxXp: 200,  color: 'text-slate-500',   bg: 'bg-slate-100'   },
-  { level: 2, title: 'Learner',      minXp: 200,  maxXp: 500,  color: 'text-green-600',   bg: 'bg-green-100'   },
-  { level: 3, title: 'Analyst',      minXp: 500,  maxXp: 1000, color: 'text-blue-600',    bg: 'bg-blue-100'    },
-  { level: 4, title: 'Investor',     minXp: 1000, maxXp: 1800, color: 'text-violet-600',  bg: 'bg-violet-100'  },
-  { level: 5, title: 'Strategist',   minXp: 1800, maxXp: 3000, color: 'text-amber-600',   bg: 'bg-amber-100'   },
-  { level: 6, title: 'Portfolio Mgr',minXp: 3000, maxXp: 5000, color: 'text-orange-600',  bg: 'bg-orange-100'  },
-  { level: 7, title: 'Fund Manager', minXp: 5000, maxXp: 8000, color: 'text-rose-600',    bg: 'bg-rose-100'    },
-  { level: 8, title: 'Market Wizard',minXp: 8000, maxXp: Infinity, color: 'text-yellow-600', bg: 'bg-yellow-100' },
+  { level: 1,  title: 'Broke Student',      minXp: 0,     maxXp: 200,   emoji: '🎒', color: 'text-slate-500',   bg: 'bg-slate-100 dark:bg-slate-800'   },
+  { level: 2,  title: 'Budget Beginner',     minXp: 200,   maxXp: 500,   emoji: '💸', color: 'text-green-600',   bg: 'bg-green-100 dark:bg-green-900'   },
+  { level: 3,  title: 'Coin Collector',      minXp: 500,   maxXp: 1000,  emoji: '🪙', color: 'text-blue-600',    bg: 'bg-blue-100 dark:bg-blue-900'     },
+  { level: 4,  title: 'Savings Scout',       minXp: 1000,  maxXp: 1800,  emoji: '🔭', color: 'text-violet-600',  bg: 'bg-violet-100 dark:bg-violet-900' },
+  { level: 5,  title: 'Market Watcher',      minXp: 1800,  maxXp: 3000,  emoji: '📡', color: 'text-amber-600',   bg: 'bg-amber-100 dark:bg-amber-900'   },
+  { level: 6,  title: 'Stock Rookie',        minXp: 3000,  maxXp: 5000,  emoji: '📈', color: 'text-orange-600',  bg: 'bg-orange-100 dark:bg-orange-900' },
+  { level: 7,  title: 'Bull in Training',    minXp: 5000,  maxXp: 8000,  emoji: '🐂', color: 'text-rose-600',    bg: 'bg-rose-100 dark:bg-rose-900'     },
+  { level: 8,  title: 'Wall St. Apprentice', minXp: 8000,  maxXp: 12000, emoji: '🏙️', color: 'text-yellow-600',  bg: 'bg-yellow-100 dark:bg-yellow-900' },
+  { level: 9,  title: 'Money Mogul',         minXp: 12000, maxXp: 18000, emoji: '💎', color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-900'},
+  { level: 10, title: 'Wolf of Wall St.',    minXp: 18000, maxXp: Infinity, emoji: '🐺', color: 'text-amber-400', bg: 'bg-gradient-to-br from-amber-100 to-yellow-100 dark:from-amber-900 dark:to-yellow-900' },
 ];
 
 export function getLevelForXp(xp) {
@@ -23,4 +25,9 @@ export function getXpProgress(xp) {
   const xpNeeded = current.maxXp - current.minXp;
   const pct = Math.min(100, Math.round((xpInLevel / xpNeeded) * 100));
   return { current, pct, xpInLevel, xpNeeded };
+}
+
+export function getNextLevel(xp) {
+  const current = getLevelForXp(xp);
+  return LEVELS.find(l => l.level === current.level + 1) ?? null;
 }

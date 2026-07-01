@@ -40,6 +40,20 @@ export const SHOP_ITEMS = [
     cantBuyReason: 'XP Boost already active',
   },
   {
+    id: 'streak_shield',
+    name: 'Streak Shield',
+    description: 'Automatically protects your streak for one missed day — stronger than a Freeze',
+    emoji: '🛡️',
+    price: 150,
+    category: 'streak',
+    onPurchase: () => {
+      localStorage.setItem('wealthquest_streak_shield', '1');
+      return {};
+    },
+    canBuy: () => localStorage.getItem('wealthquest_streak_shield') !== '1',
+    cantBuyReason: 'Streak shield already active',
+  },
+  {
     id: 'chest_key',
     name: 'Chest Key',
     description: 'Open a bonus reward chest immediately',

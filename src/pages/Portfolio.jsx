@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, EyeOff, Trophy, Crown, Star } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { ASSETS, fetchAllPrices, syntheticPoints, SECTORS } from '@/lib/marketData';
+import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { recordPortfolioValue, getPortfolioHistory } from '@/lib/portfolioHistory';
 import { calcPortfolioScore, getGradeColor } from '@/lib/portfolioScore';
 
@@ -215,6 +216,7 @@ export default function Portfolio() {
 
   const lessons = progress?.completed_lessons?.length ?? 0;
   const unlocked = lessons >= UNLOCK_LESSONS;
+  const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('portfolio');
 
   useEffect(() => {
     if (!localStorage.getItem(PORTFOLIO_KEY)) {
@@ -731,6 +733,11 @@ export default function Portfolio() {
           <TradeModal asset={tradeAsset} price={prices[tradeAsset.id]?.price ?? 0}
             cash={cash} onClose={() => setTradeAsset(null)} onTrade={handleTrade} />
         )}
+      </AnimatePresence>
+
+      {/* Section intro */}
+      <AnimatePresence>
+        {showIntro && <SectionIntro section="portfolio" onDismiss={dismissIntro} />}
       </AnimatePresence>
     </div>
   );

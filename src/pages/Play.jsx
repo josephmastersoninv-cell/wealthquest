@@ -8,11 +8,13 @@ import { LESSONS } from '@/lib/lessonData';
 import { getDueCount } from '@/lib/reviewData';
 import { getPendingChests } from '@/lib/chestData';
 import ChestModal from '@/components/ChestModal';
+import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { toast } from 'sonner';
 
 export default function Play() {
   const { progress, updateProgress } = useUserProgress();
   const [showChest, setShowChest] = useState(false);
+  const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('play');
 
   const dailyDone = progress?.daily_challenge_date === getTodayKey();
   const hearts = progress?.hearts ?? 5;
@@ -168,6 +170,10 @@ export default function Play() {
         {showChest && (
           <ChestModal onClose={() => setShowChest(false)} onReward={handleChestReward} />
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showIntro && <SectionIntro section="play" onDismiss={dismissIntro} />}
       </AnimatePresence>
     </div>
   );

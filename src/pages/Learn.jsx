@@ -16,6 +16,9 @@ import XpBar from '@/components/XpBar';
 import NewsFeed from '@/components/NewsFeed';
 import TermOfTheDay from '@/components/TermOfTheDay';
 import WeeklyRecap from '@/components/WeeklyRecap';
+import DailyLoginModal from '@/components/DailyLoginModal';
+import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
+import { shouldShowLoginReward } from '@/lib/dailyLoginReward';
 
 function StarRow({ stars }) {
   return (
@@ -107,8 +110,12 @@ function LessonNode({ lesson, colors, completed, isNext, unlocked, stars, active
 }
 
 export default function Learn() {
-  const { progress, newAchievements, dismissAchievements } = useUserProgress();
+  const { progress, updateProgress, newAchievements, dismissAchievements } = useUserProgress();
   const [activeTip, setActiveTip] = useState(null);
+  const [showLoginReward, setShowLoginReward] = useState(() => shouldShowLoginReward());
+  const { show: showIntroRaw, dismiss: dismissIntro } = useSectionIntro('learn');
+  // Show section intro only after login reward is dismissed
+  const showIntro = showIntroRaw && !showLoginReward;
 
   const completedLessons = progress?.completed_lessons ?? [];
   const lessonStars = progress?.lesson_stars ?? {};
@@ -395,6 +402,25 @@ export default function Learn() {
 
       <AchievementToast achievements={newAchievements} onDismiss={dismissAchievements} />
       <LevelUpModal progress={progress} />
+
+      <AnimatePresence>
+        {showLoginReward && (
+          <DailyLoginModal
+            onClaim={(reward) => {
+              updateProgress({
+                xp: (progress?.xp ?? 0) + reward.xp,
+                coins: (progress?.coins ?? 0) + reward.coins,
+                hearts: reward.bonus === '❤️ Heart Refill' ? 5 : undefined,
+              });
+            }}
+            onClose={() => setShowLoginReward(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showIntro && <SectionIntro section="learn" onDismiss={dismissIntro} />}
+      </AnimatePresence>
     </div>
   );
 }
