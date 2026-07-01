@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Star, Zap, Flame, Heart, ChevronRight, BookOpen } from 'lucide-react';
+import { Lock, Star, Zap, Flame, Heart, ChevronRight, BookOpen, Swords } from 'lucide-react';
 import { LESSON_COLORS, isLessonUnlocked, getLessonStars, TOTAL_LESSONS, UNITS } from '@/lib/unitData';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { getXpProgress } from '@/lib/levelData';
 import { getTodayKey } from '@/lib/dailyChallengeData';
+import { getMultiplierLabel } from '@/lib/streakMultiplier';
+import { getBossWins } from '@/pages/BossBattle';
 import AchievementToast from '@/components/AchievementToast';
 import LevelUpModal from '@/components/LevelUpModal';
 import DailyGoalRing from '@/components/DailyGoalRing';
+import DailyMissions from '@/components/DailyMissions';
+import XpBar from '@/components/XpBar';
 import NewsFeed from '@/components/NewsFeed';
 
 function StarRow({ stars }) {
@@ -114,6 +118,8 @@ export default function Learn() {
 
   const allDone = completedLessons.length >= TOTAL_LESSONS;
   const completedCount = completedLessons.length;
+  const multiplierLabel = getMultiplierLabel(streak);
+  const bossWins = getBossWins();
 
   return (
     <div className="min-h-screen bg-background pb-28" onClick={(e) => { if (!e.target.closest('button, a')) setActiveTip(null); }}>
@@ -165,15 +171,23 @@ export default function Learn() {
           </div>
         )}
 
-        {/* Progress summary */}
+        {/* XP bar + streak multiplier */}
         <div className="px-4 pt-4 pb-2">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-bold text-muted-foreground">{completedCount} / {TOTAL_LESSONS} lessons complete</span>
-            <span className="text-xs font-bold text-primary">{Math.round(completedCount / TOTAL_LESSONS * 100)}%</span>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-muted-foreground">{completedCount} / {TOTAL_LESSONS} lessons</span>
+            <div className="flex items-center gap-2">
+              {multiplierLabel && (
+                <span className="text-[10px] font-extrabold text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">{multiplierLabel} Streak Bonus</span>
+              )}
+              <span className="text-xs font-bold text-primary">{Math.round(completedCount / TOTAL_LESSONS * 100)}%</span>
+            </div>
           </div>
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-primary rounded-full transition-all duration-700" style={{ width: `${(completedCount / TOTAL_LESSONS) * 100}%` }} />
-          </div>
+          <XpBar xp={xp} showLabel={false} compact />
+        </div>
+
+        {/* Daily missions */}
+        <div className="px-4 pt-3">
+          <DailyMissions />
         </div>
 
         {/* ── Units ─────────────────────────────────────────────── */}
@@ -202,9 +216,18 @@ export default function Learn() {
                       <p className="text-xs text-white/80 mt-0.5">{unit.subtitle}</p>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1">
                     <p className="text-xs font-bold text-white/70">{unitCompleted}/{unitTotal}</p>
-                    {unitDone && <span className="text-lg">✅</span>}
+                    {unitDone ? (
+                      <Link to={`/boss/${unit.id}`} onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded-xl px-2.5 py-1 transition-all active:scale-95">
+                          <Swords className="w-3.5 h-3.5 text-white" />
+                          <span className="text-white font-extrabold text-xs">
+                            {(bossWins[unit.id] ?? 0) > 0 ? `Boss ✓` : 'Boss!'}
+                          </span>
+                        </div>
+                      </Link>
+                    ) : null}
                   </div>
                 </div>
                 {/* Unit progress bar */}

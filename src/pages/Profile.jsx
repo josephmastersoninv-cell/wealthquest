@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Moon, Sun, Shield, Zap, Flame, Heart, Trophy, Star, BookOpen, Target, ChevronRight, Check, Crown } from 'lucide-react';
+import { Moon, Sun, Shield, Zap, Flame, Heart, Trophy, Star, BookOpen, Target, ChevronRight, Check, Crown, Share2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { useTheme } from '@/lib/themeContext';
 import { getLevelForXp, getXpProgress, LEVELS } from '@/lib/levelData';
 import { ACHIEVEMENTS } from '@/lib/achievementData';
 import { DAILY_GOALS, getGoalConfig, setDailyGoal, getDailyGoal, hasStreakFreeze, setStreakFreeze, STREAK_FREEZE_COST, getTodayXp } from '@/lib/dailyGoal';
 import { TOTAL_LESSONS } from '@/lib/unitData';
+import { getMultiplierLabel } from '@/lib/streakMultiplier';
 import { toast } from 'sonner';
 
 const AVATARS = ['🦁', '🦊', '🐺', '🦅', '🐉', '🦋', '🐬', '🦄', '🐺', '🦈'];
@@ -79,6 +81,20 @@ export default function Profile() {
     window.location.reload();
   }
 
+  function shareReferral() {
+    const name = localStorage.getItem('wealthquest_display_name') ?? 'A friend';
+    const url = 'https://monelingo.vercel.app';
+    const text = `${name} challenged you to learn finance on WealthQuest! 🏆\nJoin and we both get +50 XP bonus: ${url}`;
+    if (navigator.share) {
+      navigator.share({ title: 'WealthQuest', text, url });
+    } else {
+      navigator.clipboard.writeText(text);
+      toast.success('Referral link copied! Share it to earn +50 XP each.');
+    }
+  }
+
+  const multiplierLabel = getMultiplierLabel(streak);
+
   const Section = ({ id, title, children }) => (
     <div className="mb-3">
       <button
@@ -138,13 +154,28 @@ export default function Profile() {
           {[
             { emoji: '⚡', val: xp, label: 'XP' },
             { emoji: '💰', val: coins, label: 'Coins' },
-            { emoji: '🔥', val: streak, label: 'Streak' },
+            { emoji: '🔥', val: `${streak}${multiplierLabel ? ` · ${multiplierLabel}` : ''}`, label: 'Streak' },
           ].map(s => (
             <div key={s.label} className="flex-1 bg-white/10 rounded-xl p-2.5 text-center">
-              <p className="text-white font-extrabold text-lg">{s.val.toLocaleString()}</p>
+              <p className="text-white font-extrabold text-base">{typeof s.val === 'number' ? s.val.toLocaleString() : s.val}</p>
               <p className="text-white/70 text-xs">{s.label}</p>
             </div>
           ))}
+        </div>
+
+        {/* Pro + Referral buttons */}
+        <div className="flex gap-2 mt-4">
+          <Link to="/pro" className="flex-1">
+            <div className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl py-2.5 active:scale-95 transition-all">
+              <Crown className="w-4 h-4 text-white" />
+              <span className="text-white font-extrabold text-sm">Upgrade to Pro</span>
+            </div>
+          </Link>
+          <button onClick={shareReferral}
+            className="flex items-center justify-center gap-2 bg-white/20 rounded-2xl px-4 py-2.5 active:scale-95 transition-all">
+            <Share2 className="w-4 h-4 text-white" />
+            <span className="text-white font-extrabold text-sm">Invite</span>
+          </button>
         </div>
       </div>
 

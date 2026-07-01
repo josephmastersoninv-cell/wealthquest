@@ -14,6 +14,8 @@ import Profile from '@/pages/Profile';
 import Shop from '@/pages/Shop';
 import Scenarios from '@/pages/Scenarios';
 import Review from '@/pages/Review';
+import BossBattle from '@/pages/BossBattle';
+import Pro from '@/pages/Pro';
 import BottomNav from '@/components/BottomNav';
 
 const NAV_ROUTES = ['/', '/play', '/portfolio', '/league', '/profile'];
@@ -38,6 +40,8 @@ export default function App() {
         <Route path="/practice" element={<Practice />} />
         <Route path="/daily" element={<DailyChallenge />} />
         <Route path="/lesson/:id" element={<Lesson />} />
+        <Route path="/boss/:unitId" element={<BossBattle />} />
+        <Route path="/pro" element={<Pro />} />
       </Routes>
       {showNav && <BottomNav />}
     </ThemeProvider>
