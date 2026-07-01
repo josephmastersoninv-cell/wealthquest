@@ -215,64 +215,55 @@ export default function Learn() {
 
           // ── LOCKED UNIT — mysterious teaser ──────────────────────
           if (!unitUnlocked) {
-            // Fake learner counts seeded per unit for social proof
             const fakeCount = 1200 + (unitIdx * 347 + 89) % 3800;
             const teaserTerms = unit.lessons.flatMap(l => l.terms).slice(0, 4);
             return (
               <div key={unit.id} className="mx-4 mt-5 mb-2">
-                <div className="relative rounded-2xl overflow-hidden border border-white/5">
-                  {/* Dark gradient background */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
-                  {/* Colour tint */}
-                  <div className={`absolute inset-0 opacity-10 ${unitColors.bg}`} />
+                <div className="relative rounded-2xl overflow-hidden border border-border bg-card">
 
-                  {/* Blurred ghost lesson nodes — curiosity bait */}
-                  <div className="absolute inset-0 flex items-center justify-around px-6 pt-8 pb-4 pointer-events-none select-none">
+                  {/* Coloured top strip — same style as unlocked banners but dimmed */}
+                  <div className={`${unitColors.bg} opacity-30 px-4 py-3 flex items-center justify-between`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl grayscale opacity-60">{unit.emoji}</span>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-white/70">Section {unitIdx + 1}</p>
+                        <h2 className="text-base font-extrabold text-white leading-tight">{unit.title}</h2>
+                      </div>
+                    </div>
+                    <Lock className="w-5 h-5 text-white/50" />
+                  </div>
+
+                  {/* Ghost lesson nodes — blurred, using muted colours */}
+                  <div className="flex items-center justify-around px-6 pt-5 pb-3 pointer-events-none select-none">
                     {unit.lessons.map((_, i) => (
-                      <div key={i} className="flex flex-col items-center gap-2 opacity-25 blur-[3px]">
-                        <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl">
+                      <div key={i} className="flex flex-col items-center gap-2 opacity-30 blur-[2px]">
+                        <div className={`w-12 h-12 rounded-full ${unitColors.bg} opacity-40 flex items-center justify-center text-xl`}>
                           {unit.emoji}
                         </div>
-                        <div className="w-10 h-1.5 rounded-full bg-white/20" />
+                        <div className="w-8 h-1 rounded-full bg-muted-foreground/30" />
                       </div>
                     ))}
                   </div>
 
-                  {/* Scanline overlay for mystery */}
-                  <div className="absolute inset-0 opacity-5"
-                    style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 4px)' }} />
+                  {/* Teaser pills */}
+                  <div className="flex flex-wrap gap-1.5 justify-center px-4 mb-3">
+                    {teaserTerms.map(t => (
+                      <span key={t} className="bg-muted text-muted-foreground/50 text-[10px] font-bold px-2.5 py-1 rounded-full blur-[1.5px] select-none">
+                        {t.replace(/-/g, ' ')}
+                      </span>
+                    ))}
+                    <span className="bg-muted text-muted-foreground text-[10px] font-bold px-2.5 py-1 rounded-full">+more</span>
+                  </div>
 
-                  {/* Content */}
-                  <div className="relative px-4 py-5 flex flex-col items-center text-center">
-                    <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 mb-3">
-                      <Lock className="w-3 h-3 text-white/60" />
-                      <span className="text-white/60 text-[10px] font-extrabold uppercase tracking-wider">Section {unitIdx + 1} Locked</span>
-                    </div>
-
-                    <div className="text-4xl mb-2 opacity-70">{'?'.repeat(1)}</div>
-                    <h3 className="text-white font-extrabold text-base mb-1">{unit.title}</h3>
-                    <p className="text-white/50 text-xs mb-3">{unit.subtitle}</p>
-
-                    {/* Teaser pills */}
-                    <div className="flex flex-wrap gap-1.5 justify-center mb-4">
-                      {teaserTerms.map(t => (
-                        <span key={t} className="bg-white/10 text-white/40 text-[10px] font-bold px-2 py-0.5 rounded-full blur-[2px] select-none">
-                          {t.replace(/-/g, ' ')}
-                        </span>
-                      ))}
-                      <span className="bg-white/10 text-white/40 text-[10px] font-bold px-2 py-0.5 rounded-full">+more</span>
-                    </div>
-
-                    {/* Social proof */}
-                    <div className="flex items-center gap-1.5 text-white/40 text-[10px] font-bold mb-4">
+                  {/* Social proof + unlock hint */}
+                  <div className="border-t border-border px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] font-bold">
                       <Eye className="w-3 h-3" />
-                      <span>{fakeCount.toLocaleString()} learners have unlocked this</span>
+                      <span>{fakeCount.toLocaleString()} learners unlocked this</span>
                     </div>
-
-                    {/* What you need to do */}
-                    <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/50 font-semibold">
-                      Complete <span className="text-white/80 font-extrabold">{UNITS[unitIdx - 1]?.title}</span> to unlock
-                    </div>
+                    <span className="text-[10px] font-extrabold text-muted-foreground">
+                      Finish Section {unitIdx} →
+                    </span>
                   </div>
                 </div>
               </div>
