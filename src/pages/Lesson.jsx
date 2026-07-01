@@ -55,20 +55,30 @@ function StudyPhase({ terms, colors, onDone }) {
             exit={{ opacity: 0, rotateY: flipped ? 90 : -90 }}
             transition={{ duration: 0.2 }}
             onClick={() => setFlipped(f => !f)}
-            className={`absolute inset-0 rounded-3xl border-2 ${colors.border} ${colors.light} p-6 flex flex-col items-center justify-center text-center cursor-pointer`}
+            className={`absolute inset-0 rounded-3xl border-2 ${colors.border} bg-card flex flex-col cursor-pointer overflow-hidden`}
           >
-            {!flipped ? (
-              <>
-                <span className={`text-xs font-bold uppercase tracking-wide mb-3 ${colors.text}`}>{term.category}</span>
-                <p className="text-2xl font-extrabold text-foreground">{term.term}</p>
-                <p className="text-xs text-muted-foreground mt-4">Tap to see definition</p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-semibold text-foreground leading-relaxed mb-3">{term.definition}</p>
-                {term.example && <p className="text-xs text-muted-foreground italic">e.g. {term.example}</p>}
-              </>
-            )}
+            {/* Coloured top strip for category — visually separated from main content */}
+            <div className={`${colors.bg} px-4 py-2 flex items-center justify-center shrink-0`}>
+              <span className="text-xs font-extrabold uppercase tracking-widest text-white/90">{term.category}</span>
+            </div>
+
+            {/* Main card content — centred with generous padding */}
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-4">
+              {!flipped ? (
+                <>
+                  <p className="text-2xl font-extrabold text-foreground leading-snug">{term.term}</p>
+                  <p className="text-xs text-muted-foreground mt-5">Tap to see definition</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-foreground leading-relaxed">{term.definition}</p>
+                  {term.example && (
+                    <p className="text-xs text-muted-foreground italic mt-3">e.g. {term.example}</p>
+                  )}
+                </>
+              )}
+            </div>
+
           </motion.div>
         </AnimatePresence>
       </div>
