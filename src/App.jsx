@@ -16,6 +16,8 @@ import Scenarios from '@/pages/Scenarios';
 import Review from '@/pages/Review';
 import BossBattle from '@/pages/BossBattle';
 import Pro from '@/pages/Pro';
+import Calculators from '@/pages/Calculators';
+import GlossarySearch from '@/pages/GlossarySearch';
 import BottomNav from '@/components/BottomNav';
 
 const NAV_ROUTES = ['/', '/play', '/portfolio', '/league', '/profile'];
@@ -42,6 +44,8 @@ export default function App() {
         <Route path="/lesson/:id" element={<Lesson />} />
         <Route path="/boss/:unitId" element={<BossBattle />} />
         <Route path="/pro" element={<Pro />} />
+        <Route path="/calculators" element={<Calculators />} />
+        <Route path="/glossary" element={<GlossarySearch />} />
       </Routes>
       {showNav && <BottomNav />}
     </ThemeProvider>

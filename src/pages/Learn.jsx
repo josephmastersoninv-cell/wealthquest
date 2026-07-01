@@ -14,6 +14,8 @@ import DailyGoalRing from '@/components/DailyGoalRing';
 import DailyMissions from '@/components/DailyMissions';
 import XpBar from '@/components/XpBar';
 import NewsFeed from '@/components/NewsFeed';
+import TermOfTheDay from '@/components/TermOfTheDay';
+import WeeklyRecap from '@/components/WeeklyRecap';
 
 function StarRow({ stars }) {
   return (
@@ -197,8 +199,18 @@ export default function Learn() {
           })()}
         </div>
 
+        {/* Weekly recap */}
+        <div className="pt-3">
+          <WeeklyRecap progress={progress} />
+        </div>
+
+        {/* Term of the Day */}
+        <div className="pt-1">
+          <TermOfTheDay />
+        </div>
+
         {/* Daily missions */}
-        <div className="px-4 pt-3">
+        <div className="px-4 pt-1">
           <DailyMissions />
         </div>
 

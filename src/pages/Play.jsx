@@ -30,6 +30,11 @@ export default function Play() {
     toast.success(`${reward.emoji} ${reward.label} chest: +${reward.xp} XP, +${reward.coins} coins!`);
   }
 
+  const toolCards = [
+    { to: '/glossary',     icon: '🔍', label: 'Glossary',     sub: 'Search all 131 financial terms' },
+    { to: '/calculators',  icon: '🧮', label: 'Calculators',  sub: 'Compound interest, mortgage, savings' },
+  ];
+
   const primaryModes = [
     {
       to: '/daily', icon: '📅', label: 'Daily Challenge',
@@ -125,6 +130,19 @@ export default function Play() {
                 <p className="text-xs text-muted-foreground">{m.sub}</p>
               </div>
               {m.locked ? <Lock className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {/* Tools row */}
+      <div className="flex gap-2.5 mt-1 mb-1">
+        {toolCards.map(t => (
+          <Link key={t.to} to={t.to} className="flex-1">
+            <div className="bg-card border border-border rounded-2xl p-3.5 flex flex-col gap-1.5 active:scale-95 transition-all">
+              <span className="text-2xl">{t.icon}</span>
+              <p className="font-extrabold text-xs text-foreground">{t.label}</p>
+              <p className="text-[10px] text-muted-foreground leading-tight">{t.sub}</p>
             </div>
           </Link>
         ))}

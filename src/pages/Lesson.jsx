@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 import AchievementToast from '@/components/AchievementToast';
 import Confetti from '@/components/Confetti';
 import { markWrong } from '@/lib/reviewData';
+import { sounds } from '@/lib/sound';
+import { haptics } from '@/lib/haptics';
 import { syncChestsFromLessons, getPendingChests } from '@/lib/chestData';
 import ChestModal from '@/components/ChestModal';
 import StreakMilestone from '@/components/StreakMilestone';
@@ -31,6 +33,8 @@ function StudyPhase({ terms, colors, onDone }) {
   const term = terms[idx];
 
   const next = () => {
+    sounds.cardNext();
+    haptics.tap();
     if (idx < terms.length - 1) { setIdx(i => i + 1); setFlipped(false); }
     else onDone();
   };
@@ -54,7 +58,7 @@ function StudyPhase({ terms, colors, onDone }) {
             animate={{ opacity: 1, rotateY: 0 }}
             exit={{ opacity: 0, rotateY: flipped ? 90 : -90 }}
             transition={{ duration: 0.2 }}
-            onClick={() => setFlipped(f => !f)}
+            onClick={() => { setFlipped(f => !f); sounds.flip(); }}
             className={`absolute inset-0 rounded-3xl border-2 ${colors.border} bg-card flex flex-col cursor-pointer overflow-hidden`}
           >
             {/* Coloured top strip for category — visually separated from main content */}
@@ -97,6 +101,9 @@ function QuizPhase({ terms, allTerms, colors, onDone }) {
   const [selected, setSelected] = useState(null);
   const [answered, setAnswered] = useState(false);
   const [answers, setAnswers] = useState([]);
+  // XP bomb: one random question per session gets 2× XP
+  const xpBombIdx = useMemo(() => Math.floor(Math.random() * terms.length), []);
+  const [xpBombTriggered, setXpBombTriggered] = useState(false);
 
   const questions = useMemo(() => terms.map(term => {
     const wrong = allTerms.filter(t => t.id !== term.id);
@@ -107,8 +114,21 @@ function QuizPhase({ terms, allTerms, colors, onDone }) {
 
   const q = questions[idx];
   const isCorrect = answered && selected === q.correct;
+  const isXpBomb = idx === xpBombIdx;
 
-  const handleAnswer = (i) => { if (!answered) { setSelected(i); setAnswered(true); } };
+  const handleAnswer = (i) => {
+    if (!answered) {
+      setSelected(i);
+      setAnswered(true);
+      const correct = i === q.correct;
+      if (correct) {
+        if (isXpBomb) { sounds.xpBomb(); haptics.levelUp(); setXpBombTriggered(true); }
+        else { sounds.correct(); haptics.correct(); }
+      } else {
+        sounds.wrong(); haptics.wrong();
+      }
+    }
+  };
 
   const handleNext = () => {
     const newAnswers = [...answers, selected === q.correct];
@@ -139,7 +159,18 @@ function QuizPhase({ terms, allTerms, colors, onDone }) {
       </div>
 
       <motion.div key={idx} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-        <p className={`text-xs font-bold uppercase tracking-wide mb-2 ${colors.text}`}>What is the definition of…</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className={`text-xs font-bold uppercase tracking-wide ${colors.text}`}>What is the definition of…</p>
+          {isXpBomb && !answered && (
+            <motion.span animate={{ scale: [1, 1.15, 1] }} transition={{ repeat: Infinity, duration: 0.8 }}
+              className="text-[10px] font-extrabold bg-amber-400 text-white px-2 py-0.5 rounded-full">
+              ⚡ XP BOMB
+            </motion.span>
+          )}
+          {isXpBomb && answered && xpBombTriggered && (
+            <span className="text-[10px] font-extrabold text-amber-500">⚡ 2× XP!</span>
+          )}
+        </div>
         <p className="text-xl font-extrabold text-foreground mb-6">{q.term.term}</p>
 
         <div className="flex flex-col gap-2.5">
