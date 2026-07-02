@@ -138,10 +138,85 @@ function PortfolioChart({ history, startingCash, livePoints }) {
   );
 }
 
+// ─── Chart education content ──────────────────────────────────────────────────
+const LEARN_TOPICS = {
+  candles: {
+    icon: '🕯️', title: 'Candlesticks',
+    body: 'Each candle shows price action for one time period. The body (thick part) goes from the opening price to the closing price. The wicks (thin lines) show the highest and lowest prices reached.',
+    tip: '📈 Green candle = price went UP. Red candle = price went DOWN. A big body with short wicks means strong, decisive movement.',
+  },
+  ohlc: {
+    icon: '📊', title: 'OHLC Values',
+    body: 'O = Open (first price in the period), H = High (peak price), L = Low (lowest price), C = Close (final price). These four numbers fully describe what happened in any candle.',
+    tip: '💡 If Close > Open, buyers were in control. If Close < Open, sellers won the period.',
+  },
+  volume: {
+    icon: '📦', title: 'Volume Bars',
+    body: 'The bars at the bottom show how many shares were traded. High volume during a price move confirms the trend is real. Low volume moves can be fake-outs.',
+    tip: '🔥 Big price move + high volume = strong signal. Big move + low volume = be cautious, it might reverse.',
+  },
+  ma20: {
+    icon: '📉', title: 'Moving Average (MA20)',
+    body: 'The amber line is the average of the last 20 closing prices. It smooths out noise to show the overall trend direction.',
+    tip: '✅ Price above MA20 = uptrend. Price below MA20 = downtrend. When price crosses the line = potential turning point.',
+  },
+  short: {
+    icon: '🔻', title: 'Short Selling',
+    body: 'Going short means borrowing shares and selling them now, hoping to buy them back cheaper later. You profit when the price falls. Risk: if price rises, losses are unlimited.',
+    tip: '⚠️ Shorting is advanced. Your profit zone is DOWN. You need the price to fall below your entry price to make money.',
+  },
+  buy: {
+    icon: '🟢', title: 'Going Long (Buy)',
+    body: 'Buying a stock means you own it and profit when the price rises. This is the most common way to invest. Your risk is limited to what you paid.',
+    tip: '💰 "Buy low, sell high" — you want the price to go UP after you buy.',
+  },
+  sell: {
+    icon: '🔴', title: 'Selling / Closing Long',
+    body: 'Selling closes your long position. You receive cash equal to shares × current price. Your profit is the difference between your buy price and sell price.',
+    tip: '📌 Sell when your target price is hit, or to cut losses. Don\'t let emotions keep you in a losing trade.',
+  },
+  cover: {
+    icon: '🔵', title: 'Covering a Short',
+    body: 'Covering means buying back the shares you borrowed to close your short position. If price fell since you shorted, you profit. If it rose, you take a loss.',
+    tip: '⏱️ Cover your short before losses compound. Set a mental stop-loss — e.g. exit if price rises 10% from your entry.',
+  },
+  tf: {
+    icon: '⏱️', title: 'Timeframes',
+    body: '1M = 1 minute per candle (day trading). 5M/15M = short-term trading. 1H/4H = swing trading. 1D = long-term investing.',
+    tip: '🎯 Day traders use 1M–15M. Investors use 1D. Longer timeframes = less noise, clearer trends.',
+  },
+};
+
+// ─── Learn card popup ─────────────────────────────────────────────────────────
+function LearnCard({ topic, onClose }) {
+  const t = LEARN_TOPICS[topic];
+  if (!t) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.18 }}
+      className="absolute inset-x-3 bottom-3 z-10 rounded-2xl p-4 shadow-2xl"
+      style={{ background: '#1a1f2e', border: '1px solid rgba(255,255,255,0.1)' }}>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">{t.icon}</span>
+          <p className="font-extrabold text-white text-sm">{t.title}</p>
+        </div>
+        <button onClick={onClose} className="text-white/30 active:text-white/60 text-lg leading-none">×</button>
+      </div>
+      <p className="text-xs leading-relaxed mb-3" style={{ color: 'rgba(255,255,255,0.6)' }}>{t.body}</p>
+      <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.05)' }}>
+        <p className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>{t.tip}</p>
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── TradingView-style Candlestick Chart ──────────────────────────────────────
 const PRICE_PAD_R = 52;
 
-function CandlestickChart({ candles, currentPrice }) {
+// style: 'solid' (buy/long), 'hollow' (sell/close), 'inverted' (short)
+function CandlestickChart({ candles, currentPrice, style: chartStyle = 'solid' }) {
   if (!candles?.length) return null;
 
   const CHART_H = 210;
@@ -166,17 +241,55 @@ function CandlestickChart({ candles, currentPrice }) {
   );
   const maD = ma.reduce((acc, v, i) => {
     if (!v) return acc;
-    const prev = ma[i - 1];
-    return acc + `${(!prev ? 'M' : 'L')} ${i * cW + cW / 2} ${py(v)} `;
+    return acc + `${!ma[i - 1] ? 'M' : 'L'} ${i * cW + cW / 2} ${py(v)} `;
   }, '');
 
   const curY = py(currentPrice);
   const gridLevels = [0, 0.25, 0.5, 0.75, 1].map(t => vMin + t * vRange);
   const fmtP = p => p >= 1000 ? p.toFixed(0) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
 
+  // Color scheme per chart style
+  // solid: standard green/red filled
+  // hollow: outline only (close > open = empty body with green border, close < open = filled red)
+  // inverted: bear candles highlighted (purple for up, emerald for down — short perspective)
+  const getColors = (isUp) => {
+    if (chartStyle === 'solid')   return { wick: isUp ? '#22c55e' : '#ef4444', fill: isUp ? '#22c55e' : '#ef4444', stroke: 'none', filled: true };
+    if (chartStyle === 'hollow')  return isUp
+      ? { wick: '#22c55e', fill: 'none', stroke: '#22c55e', filled: false }
+      : { wick: '#ef4444', fill: '#ef4444', stroke: 'none', filled: true };
+    // inverted (short view): down = good (emerald), up = bad (violet)
+    return isUp
+      ? { wick: '#a78bfa', fill: '#a78bfa', stroke: 'none', filled: true }
+      : { wick: '#22c55e', fill: '#22c55e', stroke: 'none', filled: true };
+  };
+
+  const curTagColor = chartStyle === 'inverted' ? '#a78bfa' : '#22c55e';
+  const maColor = chartStyle === 'inverted' ? '#fb923c' : '#f59e0b';
+
   return (
     <svg width="100%" height="100%" viewBox={`0 0 ${340 + PRICE_PAD_R} ${TOTAL_H}`}
          preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+      {/* Legend top-left */}
+      {chartStyle === 'solid' && <>
+        <rect x={4} y={3} width={8} height={8} fill="#22c55e" rx={1} />
+        <text x={14} y={10} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">Up</text>
+        <rect x={28} y={3} width={8} height={8} fill="#ef4444" rx={1} />
+        <text x={38} y={10} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">Down</text>
+      </>}
+      {chartStyle === 'hollow' && <>
+        <rect x={4} y={3} width={8} height={8} fill="none" stroke="#22c55e" strokeWidth={1} rx={1} />
+        <text x={14} y={10} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">Up</text>
+        <rect x={28} y={3} width={8} height={8} fill="#ef4444" rx={1} />
+        <text x={38} y={10} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">Down</text>
+      </>}
+      {chartStyle === 'inverted' && <>
+        <rect x={4} y={3} width={8} height={8} fill="#22c55e" rx={1} />
+        <text x={14} y={10} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">↓ Profit</text>
+        <rect x={54} y={3} width={8} height={8} fill="#a78bfa" rx={1} />
+        <text x={64} y={10} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">↑ Loss</text>
+      </>}
+
+      {/* Grid */}
       {gridLevels.map((p, i) => {
         const y = py(p);
         return (
@@ -186,62 +299,100 @@ function CandlestickChart({ candles, currentPrice }) {
           </g>
         );
       })}
+
+      {/* Candles */}
       {candles.map((c, i) => {
-        const x    = i * cW + cW / 2;
-        const green = c.c >= c.o;
-        const col  = green ? '#22c55e' : '#ef4444';
-        const bTop = py(Math.max(c.o, c.c));
-        const bBot = py(Math.min(c.o, c.c));
-        const bH   = Math.max(1, bBot - bTop);
+        const x     = i * cW + cW / 2;
+        const isUp  = c.c >= c.o;
+        const col   = getColors(isUp);
+        const bTop  = py(Math.max(c.o, c.c));
+        const bBot  = py(Math.min(c.o, c.c));
+        const bH    = Math.max(1, bBot - bTop);
+        const isLast = i === candles.length - 1;
         return (
           <g key={i}>
-            <line x1={x} y1={py(c.h)} x2={x} y2={py(c.l)} stroke={col} strokeWidth={Math.max(0.7, cW * 0.08)} />
-            <rect x={x - bW / 2} y={bTop} width={bW} height={bH} fill={col} opacity={i === candles.length - 1 ? 1 : 0.88} rx={0.5} />
+            <line x1={x} y1={py(c.h)} x2={x} y2={py(c.l)}
+              stroke={col.wick} strokeWidth={Math.max(0.7, cW * 0.08)} />
+            <rect x={x - bW / 2} y={bTop} width={bW} height={bH}
+              fill={col.fill} stroke={col.stroke} strokeWidth={col.filled ? 0 : 1}
+              opacity={isLast ? 1 : 0.88} rx={0.5} />
           </g>
         );
       })}
-      {maD && <path d={maD} fill="none" stroke="#f59e0b" strokeWidth={1} opacity={0.6} />}
-      <line x1={0} y1={curY} x2={340} y2={curY} stroke="#22c55e" strokeWidth={0.7} strokeDasharray="3 2" opacity={0.55} />
-      <rect x={341} y={curY - 7.5} width={PRICE_PAD_R - 2} height={15} fill="#22c55e" rx={2.5} />
-      <text x={341 + (PRICE_PAD_R - 2) / 2} y={curY + 4} fill="white" fontSize="8" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
+
+      {/* MA20 */}
+      {maD && <path d={maD} fill="none" stroke={maColor} strokeWidth={1} opacity={0.6} />}
+      <rect x={4} y={CHART_H - 10} width={8} height={2} fill={maColor} opacity={0.6} rx={1} />
+      <text x={14} y={CHART_H - 5} fill="rgba(255,255,255,0.18)" fontSize="6.5" fontFamily="monospace">MA20</text>
+
+      {/* Current price line */}
+      <line x1={0} y1={curY} x2={340} y2={curY}
+        stroke={curTagColor} strokeWidth={0.7} strokeDasharray="3 2" opacity={0.6} />
+      <rect x={341} y={curY - 7.5} width={PRICE_PAD_R - 2} height={15} fill={curTagColor} rx={2.5} />
+      <text x={341 + (PRICE_PAD_R - 2) / 2} y={curY + 4}
+        fill="white" fontSize="8" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
         {fmtP(currentPrice)}
       </text>
+
+      {/* Volume bars */}
       {candles.map((c, i) => {
-        const x  = i * cW;
-        const bH = (c.v / volMax) * VOL_H;
+        const bH  = (c.v / volMax) * VOL_H;
+        const col = getColors(c.c >= c.o);
         return (
-          <rect key={i} x={x + 0.5} y={CHART_H + VOL_GAP + VOL_H - bH}
+          <rect key={i} x={i * cW + 0.5} y={CHART_H + VOL_GAP + VOL_H - bH}
             width={Math.max(0.5, cW - 1)} height={bH}
-            fill={c.c >= c.o ? '#22c55e' : '#ef4444'} opacity={0.32} />
+            fill={col.filled ? col.fill : col.stroke} opacity={0.3} />
         );
       })}
       <text x={2} y={CHART_H + VOL_GAP + 9} fill="rgba(255,255,255,0.15)" fontSize="6.5" fontFamily="monospace">VOL</text>
-      <rect x={4} y={4} width={10} height={2} fill="#f59e0b" opacity={0.6} rx={1} />
-      <text x={17} y={9} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">MA20</text>
     </svg>
   );
 }
+
+// ─── Mode tip bar ─────────────────────────────────────────────────────────────
+const MODE_TIPS = {
+  buy:   { emoji: '🟢', text: 'You profit when price goes UP after you buy.' },
+  sell:  { emoji: '🔴', text: 'Close your position. Profit = sell price − buy price.' },
+  short: { emoji: '🔻', text: 'You profit when price goes DOWN. Borrow now, buy back cheaper.' },
+  cover: { emoji: '🔵', text: 'Buy back borrowed shares to close your short position.' },
+};
 
 // ─── TradingView-style full-screen Chart Modal ────────────────────────────────
 const TF_LIST  = ['1M', '5M', '15M', '1H', '4H', '1D'];
 const TF_TICKS = { '1M': 8, '5M': 37, '15M': 112, '1H': 450, '4H': 1800, '1D': 10800 };
 
-function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatus }) {
+const CHART_STYLE = { buy: 'solid', sell: 'hollow', short: 'inverted', cover: 'inverted' };
+
+function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, marketStatus }) {
   const [tf, setTf]           = useState('1M');
   const [candles, setCandles] = useState(() => generateCandles(asset.id, price, '1M'));
   const [mode, setMode]       = useState('buy');
   const [dollars, setDollars] = useState('');
   const [panel, setPanel]     = useState('chart');
+  const [learnTopic, setLearnTopic] = useState(null);
   const tickCount             = useRef(0);
 
   const ipo       = IPO_DATA[asset.id];
   const tradeable = canAssetTrade(asset, marketStatus);
   const amt    = parseFloat(dollars) || 0;
-  const shares = price > 0 ? amt / price : 0;
+  const fmtP = p => p >= 1000 ? p.toFixed(0) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
+
+  // Per-mode financials
+  const shares    = price > 0 ? amt / price : 0;
   const maxSell   = holding ? holding.shares * price : 0;
-  const activeMax = mode === 'buy' ? cash : maxSell;
+  const maxCover  = shortPos ? shortPos.shares * price : 0;
+  const activeMax = mode === 'buy' ? cash
+                  : mode === 'sell' ? maxSell
+                  : mode === 'short' ? cash           // margin = cost of shares
+                  : maxCover;                          // cover = buy-back value
   const canReview = amt > 0 && shares > 0 && amt <= activeMax && tradeable;
-  const cashAfter = mode === 'buy' ? cash - amt : cash + shares * price;
+  const cashAfter = mode === 'buy'   ? cash - amt
+                  : mode === 'sell'  ? cash + amt
+                  : mode === 'short' ? cash - amt      // collateral posted
+                  : cash + (shortPos ? (shortPos.entryPrice - price) * shares : 0); // cover P&L
+
+  // Short P&L on open position
+  const shortPnl = shortPos ? (shortPos.entryPrice - price) * shortPos.shares : 0;
 
   useEffect(() => {
     setCandles(prev => {
@@ -266,6 +417,8 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
     setTf(newTf);
     tickCount.current = 0;
     setCandles(generateCandles(asset.id, price, newTf));
+    setLearnTopic('tf');
+    setTimeout(() => setLearnTopic(null), 4000);
   }
 
   const last       = candles[candles.length - 1];
@@ -273,7 +426,13 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
   const sessionPct = first ? ((price - first.o) / first.o) * 100 : 0;
   const positive   = sessionPct >= 0;
   const allTimeRet = ipo ? ((price - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
-  const fmtP = p => p >= 1000 ? p.toFixed(0) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
+  const modeColors = {
+    buy:   { bg: '#22c55e', shadow: 'rgba(34,197,94,0.3)'   },
+    sell:  { bg: '#ef4444', shadow: 'rgba(239,68,68,0.3)'   },
+    short: { bg: '#a78bfa', shadow: 'rgba(167,139,250,0.3)' },
+    cover: { bg: '#3b82f6', shadow: 'rgba(59,130,246,0.3)'  },
+  };
+  const mc = modeColors[mode];
 
   return (
     <motion.div
@@ -282,7 +441,7 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
       className="fixed inset-0 z-50 flex flex-col"
       style={{ background: '#0b0e14' }}>
 
-      {/* Top bar */}
+      {/* ── Top bar ── */}
       <div className="flex items-center gap-3 px-4 pt-12 pb-3 border-b"
            style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
         <button onClick={onClose} className="p-1.5 rounded-lg active:scale-90"
@@ -302,25 +461,35 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
         </div>
       </div>
 
-      {/* OHLC bar */}
+      {/* ── OHLC bar (tappable — each label opens learn card) ── */}
       {last && (
-        <div className="flex items-center gap-3 px-4 py-1.5"
+        <div className="flex items-center gap-2 px-3 py-1.5"
              style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-          {[['O', fmtP(last.o), 'rgba(255,255,255,0.55)'], ['H', fmtP(last.h), '#22c55e'], ['L', fmtP(last.l), '#ef4444'], ['C', fmtP(price), 'rgba(255,255,255,0.7)']].map(([lbl, val, col]) => (
-            <span key={lbl} style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, fontFamily: 'monospace' }}>
+          {[
+            ['O', fmtP(last.o), 'rgba(255,255,255,0.55)', 'ohlc'],
+            ['H', fmtP(last.h), '#22c55e',                'ohlc'],
+            ['L', fmtP(last.l), '#ef4444',                'ohlc'],
+            ['C', fmtP(price),  'rgba(255,255,255,0.7)',  'ohlc'],
+          ].map(([lbl, val, col, topic]) => (
+            <button key={lbl} onClick={() => setLearnTopic(learnTopic === topic ? null : topic)}
+              style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontFamily: 'monospace', textDecoration: 'none' }}>
               {lbl}&nbsp;<span style={{ color: col }}>{val}</span>
-            </span>
+            </button>
           ))}
           {allTimeRet !== null && (
             <span className="ml-auto text-emerald-400 font-extrabold" style={{ fontSize: 10 }}>
               {formatIPOReturn(allTimeRet)} since IPO
             </span>
           )}
+          {/* ? help button */}
+          <button onClick={() => setLearnTopic(learnTopic === 'candles' ? null : 'candles')}
+            className="ml-1 rounded-full flex items-center justify-center text-xs font-extrabold"
+            style={{ width: 16, height: 16, background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)' }}>?</button>
         </div>
       )}
 
-      {/* Timeframe selector */}
-      <div className="flex items-center gap-0.5 px-3 py-2"
+      {/* ── Timeframe selector ── */}
+      <div className="flex items-center gap-0.5 px-3 py-1.5"
            style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
         {TF_LIST.map(t => (
           <button key={t} onClick={() => switchTf(t)}
@@ -338,17 +507,23 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="flex-1 px-2 py-2 min-h-0">
-        <CandlestickChart candles={candles} currentPrice={price} />
+      {/* ── Chart + learn card overlay ── */}
+      <div className="flex-1 px-2 py-1 min-h-0 relative">
+        <CandlestickChart candles={candles} currentPrice={price} style={CHART_STYLE[mode] ?? 'solid'} />
+        <AnimatePresence>
+          {learnTopic && (
+            <LearnCard topic={learnTopic} onClose={() => setLearnTopic(null)} />
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Bottom panel */}
-      <div className="border-t px-4 pb-10 pt-4"
+      {/* ── Bottom panel ── */}
+      <div className="border-t px-4 pb-10 pt-3"
            style={{ borderColor: 'rgba(255,255,255,0.07)', background: '#13161f' }}>
 
+        {/* Market closed banner */}
         {!tradeable && (
-          <div className="flex items-center gap-3 py-2 mb-3 px-3 rounded-2xl"
+          <div className="flex items-center gap-3 py-2 mb-3 px-3 rounded-xl"
                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
             <Lock className="w-4 h-4 text-rose-400 shrink-0" />
             <div>
@@ -360,40 +535,108 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
           </div>
         )}
 
+        {/* Short P&L live badge */}
+        {shortPos && (
+          <button onClick={() => setLearnTopic('cover')}
+            className="flex items-center justify-between w-full rounded-xl px-3 py-2 mb-2"
+            style={{ background: shortPnl >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                     border: `1px solid ${shortPnl >= 0 ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🔻</span>
+              <div className="text-left">
+                <p className="text-xs font-extrabold text-white">Short Position</p>
+                <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  {shortPos.shares.toFixed(4)} sh @ ${fmtP(shortPos.entryPrice)} entry
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className={`text-sm font-extrabold ${shortPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {shortPnl >= 0 ? '+' : ''}${shortPnl.toFixed(2)}
+              </p>
+              <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>tap to learn</p>
+            </div>
+          </button>
+        )}
+
+        {/* ─ chart panel: action buttons ─ */}
         {panel === 'chart' && (
           <>
-            <div className="flex gap-2 mb-3">
-              <button onClick={() => { setMode('buy'); setPanel('order'); }} disabled={!tradeable}
-                className="flex-1 py-4 rounded-2xl font-extrabold text-white text-base active:scale-[0.97] disabled:opacity-30 transition-all"
-                style={{ background: '#22c55e', boxShadow: '0 4px 20px rgba(34,197,94,0.25)' }}>Buy</button>
-              <button onClick={() => { setMode('sell'); setPanel('order'); }} disabled={!tradeable || !holding}
-                className="flex-1 py-4 rounded-2xl font-extrabold text-white text-base active:scale-[0.97] disabled:opacity-30 transition-all"
-                style={{ background: '#ef4444', boxShadow: '0 4px 20px rgba(239,68,68,0.25)' }}>Sell</button>
+            {/* Row 1: Buy / Sell */}
+            <div className="flex gap-2 mb-2">
+              <button onClick={() => { setMode('buy'); setPanel('order'); setDollars(''); setLearnTopic('buy'); setTimeout(() => setLearnTopic(null), 3500); }}
+                disabled={!tradeable}
+                className="flex-1 py-3.5 rounded-2xl font-extrabold text-white text-sm active:scale-[0.97] disabled:opacity-30 transition-all"
+                style={{ background: '#22c55e', boxShadow: '0 4px 16px rgba(34,197,94,0.2)' }}>
+                🟢 Buy
+              </button>
+              <button onClick={() => { setMode('sell'); setPanel('order'); setDollars(''); setLearnTopic('sell'); setTimeout(() => setLearnTopic(null), 3500); }}
+                disabled={!tradeable || !holding}
+                className="flex-1 py-3.5 rounded-2xl font-extrabold text-white text-sm active:scale-[0.97] disabled:opacity-30 transition-all"
+                style={{ background: '#ef4444', boxShadow: '0 4px 16px rgba(239,68,68,0.2)' }}>
+                🔴 Sell
+              </button>
             </div>
-            <div className="flex items-center justify-between" style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
-              <span>Cash&nbsp;<span style={{ color: 'rgba(255,255,255,0.6)' }}>${cash.toFixed(2)}</span></span>
-              {holding && <span>Held&nbsp;<span style={{ color: 'rgba(255,255,255,0.6)' }}>{holding.shares.toFixed(4)} sh</span></span>}
-              {asset.type === 'crypto' && <span style={{ color: '#a78bfa', fontWeight: 800 }}>Crypto 24/7</span>}
+            {/* Row 2: Short / Cover */}
+            <div className="flex gap-2 mb-2">
+              <button onClick={() => { setMode('short'); setPanel('order'); setDollars(''); setLearnTopic('short'); setTimeout(() => setLearnTopic(null), 4500); }}
+                disabled={!tradeable}
+                className="flex-1 py-2.5 rounded-xl font-extrabold text-white text-xs active:scale-[0.97] disabled:opacity-30 transition-all"
+                style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#a78bfa' }}>
+                🔻 Short
+              </button>
+              <button onClick={() => { setMode('cover'); setPanel('order'); setDollars(''); setLearnTopic('cover'); setTimeout(() => setLearnTopic(null), 4500); }}
+                disabled={!tradeable || !shortPos}
+                className="flex-1 py-2.5 rounded-xl font-extrabold text-xs active:scale-[0.97] disabled:opacity-30 transition-all"
+                style={{ background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', color: '#60a5fa' }}>
+                🔵 Cover
+              </button>
+              <button onClick={() => setLearnTopic(learnTopic === 'short' ? null : 'short')}
+                className="w-9 rounded-xl text-xs font-extrabold"
+                style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>?</button>
+            </div>
+
+            {/* Stats row */}
+            <div className="flex items-center justify-between" style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)' }}>
+              <span>Cash <span style={{ color: 'rgba(255,255,255,0.6)' }}>${cash.toFixed(2)}</span></span>
+              {holding && <span>Long <span style={{ color: '#22c55e' }}>{holding.shares.toFixed(3)} sh</span></span>}
+              {shortPos && <span>Short <span style={{ color: '#a78bfa' }}>{shortPos.shares.toFixed(3)} sh</span></span>}
+              {asset.type === 'crypto' && <span style={{ color: '#a78bfa', fontWeight: 800 }}>24/7</span>}
             </div>
           </>
         )}
 
+        {/* ─ order entry panel ─ */}
         {panel === 'order' && (
           <div>
+            {/* Mode tip */}
+            {MODE_TIPS[mode] && (
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-3"
+                   style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <span className="text-base">{MODE_TIPS[mode].emoji}</span>
+                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>{MODE_TIPS[mode].text}</p>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 mb-3">
               <button onClick={() => setPanel('chart')} className="p-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.08)' }}>
                 <ArrowLeft className="w-4 h-4 text-white/50" />
               </button>
+              {/* Mode tabs */}
               <div className="flex rounded-xl p-0.5 flex-1" style={{ background: 'rgba(255,255,255,0.07)' }}>
-                {['buy', 'sell'].map(m => (
-                  <button key={m} onClick={() => setMode(m)}
-                    className="flex-1 py-2 rounded-lg text-xs font-extrabold capitalize transition-all active:scale-95"
-                    style={mode === m ? { background: m === 'buy' ? '#22c55e' : '#ef4444', color: 'white' } : { color: 'rgba(255,255,255,0.35)' }}>
+                {(['buy', 'sell', 'short', 'cover']).filter(m =>
+                  (m !== 'sell'  || holding) &&
+                  (m !== 'cover' || shortPos)
+                ).map(m => (
+                  <button key={m} onClick={() => { setMode(m); setDollars(''); }}
+                    className="flex-1 py-1.5 rounded-lg text-[10px] font-extrabold capitalize transition-all active:scale-95"
+                    style={mode === m ? { background: modeColors[m].bg, color: 'white' } : { color: 'rgba(255,255,255,0.3)' }}>
                     {m}
                   </button>
                 ))}
               </div>
             </div>
+
             <div className="relative mb-3">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-extrabold" style={{ color: 'rgba(255,255,255,0.3)' }}>$</span>
               <input type="number" inputMode="decimal" value={dollars} onChange={e => setDollars(e.target.value)}
@@ -401,45 +644,54 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
                 className="w-full rounded-xl py-3.5 pl-9 pr-4 font-extrabold text-xl text-right text-white focus:outline-none"
                 style={{ background: 'rgba(255,255,255,0.08)' }} />
             </div>
-            <div className="grid grid-cols-4 gap-1.5 mb-3">
-              {(mode === 'buy'
-                ? [{ l:'25%', v: activeMax*.25 }, { l:'50%', v: activeMax*.50 }, { l:'75%', v: activeMax*.75 }, { l:'Max', v: activeMax }]
-                : [{ l:'25%', v: maxSell*.25  }, { l:'50%', v: maxSell*.50  }, { l:'75%', v: maxSell*.75  }, { l:'All', v: maxSell }]
-              ).map(({ l, v }) => (
+
+            <div className="grid grid-cols-4 gap-1.5 mb-2">
+              {[{ l:'25%', v: activeMax*.25 }, { l:'50%', v: activeMax*.50 }, { l:'75%', v: activeMax*.75 }, { l:'Max', v: activeMax }].map(({ l, v }) => (
                 <button key={l} onClick={() => setDollars(v.toFixed(2))}
                   className="rounded-lg py-2 text-xs font-extrabold active:scale-95 transition-all"
                   style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>{l}</button>
               ))}
             </div>
+
             {shares > 0 && (
-              <p className="text-center text-xs mb-3 tabular-nums" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              <p className="text-center text-xs mb-2 tabular-nums" style={{ color: 'rgba(255,255,255,0.3)' }}>
                 ≈ {shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4)} shares @ ${fmtP(price)}
               </p>
             )}
             {amt > activeMax && amt > 0 && (
-              <p className="text-center text-xs text-rose-400 font-bold mb-3">
-                {mode === 'buy' ? 'Insufficient cash' : "You don't own that many shares"}
+              <p className="text-center text-xs text-rose-400 font-bold mb-2">
+                {mode === 'buy' || mode === 'short' ? 'Insufficient cash' : "You don't have that position size"}
               </p>
             )}
+            {/* Extra short warning */}
+            {mode === 'short' && amt > 0 && amt <= activeMax && (
+              <p className="text-center text-[10px] mb-2" style={{ color: '#a78bfa' }}>
+                ⚠️ Shorting: profit if price falls below ${fmtP(price)}
+              </p>
+            )}
+
             <button onClick={() => canReview && setPanel('confirm')} disabled={!canReview}
               className="w-full py-4 rounded-2xl font-extrabold text-white text-base active:scale-[0.98] disabled:opacity-25 transition-all"
-              style={{ background: mode === 'buy' ? '#22c55e' : '#ef4444',
-                       boxShadow: `0 4px 20px ${mode === 'buy' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
-              Review {mode === 'buy' ? 'Buy' : 'Sell'} Order
+              style={{ background: mc.bg, boxShadow: `0 4px 20px ${mc.shadow}` }}>
+              Review {mode.charAt(0).toUpperCase() + mode.slice(1)} Order
             </button>
           </div>
         )}
 
+        {/* ─ confirm panel ─ */}
         {panel === 'confirm' && (
           <div>
             <div className="rounded-2xl p-4 mb-4 space-y-3" style={{ background: 'rgba(255,255,255,0.05)' }}>
               {[
-                { l: 'Action',     v: mode === 'buy' ? '🟢 BUY' : '🔴 SELL' },
-                { l: 'Asset',      v: `${asset.emoji} ${asset.symbol}` },
-                { l: 'Shares',     v: shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4) },
-                { l: 'Price',      v: `$${fmtP(price)}` },
-                { l: 'Total',      v: `$${amt.toFixed(2)}`, bold: true },
-                { l: 'Cash after', v: `$${cashAfter.toFixed(2)}`, col: cashAfter < 0 ? '#ef4444' : 'rgba(255,255,255,0.7)' },
+                { l: 'Action',  v: `${MODE_TIPS[mode]?.emoji} ${mode.toUpperCase()}` },
+                { l: 'Asset',   v: `${asset.emoji} ${asset.symbol}` },
+                { l: 'Shares',  v: shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4) },
+                { l: 'Price',   v: `$${fmtP(price)}` },
+                { l: 'Total',   v: `$${amt.toFixed(2)}`, bold: true },
+                mode === 'cover'
+                  ? { l: 'P&L', v: `${shortPnl >= 0 ? '+' : ''}$${((shortPos?.entryPrice - price) * shares).toFixed(2)}`,
+                      col: (shortPos?.entryPrice ?? price) >= price ? '#22c55e' : '#ef4444' }
+                  : { l: 'Cash after', v: `$${cashAfter.toFixed(2)}`, col: cashAfter < 0 ? '#ef4444' : 'rgba(255,255,255,0.7)' },
               ].map(r => (
                 <div key={r.l} className="flex justify-between items-center">
                   <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{r.l}</span>
@@ -447,28 +699,40 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
                 </div>
               ))}
             </div>
+            {/* educational reminder */}
+            <div className="rounded-xl px-3 py-2 mb-3" style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <p className="text-[10px] text-center" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                {mode === 'buy'   && '📈 You profit when price rises above your buy price.'}
+                {mode === 'sell'  && '💰 Gain = (sell price − avg cost) × shares.'}
+                {mode === 'short' && '🔻 You profit when the price drops. Losses grow if price rises.'}
+                {mode === 'cover' && '🔵 Your short P&L locks in when you cover.'}
+              </p>
+            </div>
             <div className="flex gap-2">
               <button onClick={() => setPanel('order')}
                 className="flex-1 py-3.5 rounded-2xl font-extrabold text-sm active:scale-95"
                 style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>Back</button>
               <button onClick={() => { setPanel('done'); setTimeout(() => onTrade(mode, shares, amt), 1200); }}
                 className="py-3.5 rounded-2xl font-extrabold text-white text-sm active:scale-[0.97] transition-all"
-                style={{ flex: 2, background: mode === 'buy' ? '#22c55e' : '#ef4444',
-                         boxShadow: `0 4px 16px ${mode === 'buy' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
-                Confirm {mode === 'buy' ? 'Buy' : 'Sell'}
+                style={{ flex: 2, background: mc.bg, boxShadow: `0 4px 16px ${mc.shadow}` }}>
+                Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}
               </button>
             </div>
           </div>
         )}
 
+        {/* ─ done panel ─ */}
         {panel === 'done' && (
-          <div className="flex flex-col items-center gap-2 py-3">
+          <div className="flex flex-col items-center gap-2 py-2">
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 380, damping: 22 }}>
-              <CheckCircle2 className={`w-12 h-12 ${mode === 'buy' ? 'text-emerald-400' : 'text-rose-400'}`} />
+              <CheckCircle2 className="w-12 h-12" style={{ color: mc.bg }} />
             </motion.div>
             <p className="text-lg font-extrabold text-white">Order Filled</p>
             <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              {mode === 'buy' ? 'Bought' : 'Sold'} {shares.toFixed(4)} {asset.symbol} @ ${fmtP(price)}
+              {mode === 'buy'   && `Bought ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)}`}
+              {mode === 'sell'  && `Sold ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)}`}
+              {mode === 'short' && `Shorted ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)} — profit if price falls`}
+              {mode === 'cover' && `Covered ${shares.toFixed(4)} ${asset.symbol} short`}
             </p>
           </div>
         )}
@@ -993,7 +1257,13 @@ export default function Portfolio() {
       return;
     }
     const price = prices[asset.id]?.price ?? 0;
-    const p = { ...portfolio, holdings: [...(portfolio?.holdings ?? [])], trades: [...(portfolio?.trades ?? [])] };
+    const p = {
+      ...portfolio,
+      holdings: [...(portfolio?.holdings ?? [])],
+      shorts:   [...(portfolio?.shorts   ?? [])],
+      trades:   [...(portfolio?.trades   ?? [])],
+    };
+
     if (mode === 'buy') {
       if (dollars > p.cash) return;
       const ex = p.holdings.find(h => h.assetId === asset.id);
@@ -1005,13 +1275,34 @@ export default function Portfolio() {
         p.holdings.push({ assetId: asset.id, shares, avgCost: price });
       }
       p.cash -= dollars;
-    } else {
+    } else if (mode === 'sell') {
       const h = p.holdings.find(h => h.assetId === asset.id);
       if (!h || h.shares < shares) return;
       h.shares -= shares;
       if (h.shares < 0.000001) p.holdings = p.holdings.filter(x => x.assetId !== asset.id);
       p.cash += price * shares;
+    } else if (mode === 'short') {
+      // Post cash as margin (collateral = shares × price)
+      if (dollars > p.cash) return;
+      const ex = p.shorts.find(s => s.assetId === asset.id);
+      if (ex) {
+        const tot = ex.shares + shares;
+        ex.entryPrice = (ex.entryPrice * ex.shares + price * shares) / tot;
+        ex.shares = tot;
+      } else {
+        p.shorts.push({ assetId: asset.id, shares, entryPrice: price });
+      }
+      p.cash -= dollars; // hold as margin
+    } else if (mode === 'cover') {
+      const s = p.shorts.find(s => s.assetId === asset.id);
+      if (!s || s.shares < shares) return;
+      const pnl = (s.entryPrice - price) * shares;
+      // Return margin + P&L
+      p.cash += dollars + pnl;
+      s.shares -= shares;
+      if (s.shares < 0.000001) p.shorts = p.shorts.filter(x => x.assetId !== asset.id);
     }
+
     p.trades.push({ type: mode, assetId: asset.id, shares, price, ts: Date.now() });
     savePortfolio(p);
     setTradeAsset(null);
@@ -1467,6 +1758,7 @@ export default function Portfolio() {
             price={prices[tradeAsset.id]?.price ?? 0}
             cash={cash}
             holding={holdings.find(h => h.assetId === tradeAsset.id)}
+            shortPos={(portfolio?.shorts ?? []).find(s => s.assetId === tradeAsset.id)}
             onClose={() => setTradeAsset(null)}
             onTrade={handleTrade}
             marketStatus={marketStatus}
