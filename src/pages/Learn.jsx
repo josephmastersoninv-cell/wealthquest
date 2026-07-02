@@ -164,164 +164,28 @@ export default function Learn() {
       </div>
 
       <div className="max-w-lg mx-auto">
-        {/* Country competition hero banner */}
-        {(() => {
-          const myCountryCode = getMyCountry();
-          const myCountry = myCountryCode ? getCountryByCode(myCountryCode) : null;
-          if (!myCountry) return (
-            <div className="px-4 pt-4">
-              <Link to="/league">
-                <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl px-4 py-3 flex items-center justify-between active:scale-[0.98] transition-all">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xl">🌍</span>
-                    <div>
-                      <p className="text-sm font-extrabold text-white">Represent your country!</p>
-                      <p className="text-xs text-white/70">Set your country to compete on the world stage</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />
-                </div>
-              </Link>
-            </div>
-          );
-          return (
-            <div className="px-4 pt-4">
-              <Link to="/league">
-                <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl px-4 py-3 flex items-center justify-between active:scale-[0.98] transition-all">
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl">{myCountry.flag}</span>
-                    <div>
-                      <p className="text-sm font-extrabold text-white">Representing {myCountry.name}</p>
-                      <p className="text-xs text-white/70">Your XP &amp; portfolio count for your country's ranking</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />
-                </div>
-              </Link>
-            </div>
-          );
-        })()}
 
-        {/* Daily challenge nudge */}
-        {!dailyDone && (
-          <div className="px-4 pt-3">
-            <Link to="/daily">
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center justify-between active:scale-[0.98] transition-all">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xl">🔥</span>
-                  <div>
-                    <p className="text-sm font-extrabold text-amber-400">Daily Challenge!</p>
-                    <p className="text-xs text-muted-foreground">5 questions · +50 XP · +$20</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-amber-500 shrink-0" />
-              </div>
-            </Link>
-          </div>
-        )}
-
-        {/* XP bar + streak multiplier */}
-        <div className="px-4 pt-4 pb-2">
-          <div className="flex items-center justify-between mb-2">
+        {/* Slim progress strip */}
+        <div className="px-4 pt-3 pb-1">
+          <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-bold text-muted-foreground">{completedCount} / {TOTAL_LESSONS} lessons</span>
             <div className="flex items-center gap-2">
-              {multiplierLabel && (
-                <span className="text-[10px] font-extrabold text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">{multiplierLabel} Streak Bonus</span>
-              )}
+              {multiplierLabel && <span className="text-[10px] font-extrabold text-amber-500">{multiplierLabel} 🔥</span>}
               <span className="text-xs font-bold text-primary">{Math.round(completedCount / TOTAL_LESSONS * 100)}%</span>
             </div>
           </div>
           <XpBar xp={xp} showLabel={false} compact />
-          {/* Near-miss level nudge */}
-          {(() => {
-            const { xpInLevel, xpNeeded, current } = getXpProgress(xp);
-            const remaining = xpNeeded - xpInLevel;
-            if (current.maxXp === Infinity || remaining > 120) return null;
-            return (
-              <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                className="text-[10px] font-extrabold text-amber-500 mt-1 text-right">
-                ⚡ Only {remaining} XP to {UNITS.find(() => true)?.emoji ?? '🏆'} Level {current.level + 1}!
-              </motion.p>
-            );
-          })()}
         </div>
 
-        {/* Streak reminder — shown if streak > 1 and not yet active today */}
+        {/* Streak at risk — only if urgent */}
         {streak > 1 && !dailyDone && (
           <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-            className="mx-4 mt-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 flex items-center gap-3">
-            <span className="text-2xl">🔥</span>
-            <div className="flex-1">
-              <p className="text-sm font-extrabold text-amber-400">{streak}-day streak at risk!</p>
-              <p className="text-xs text-muted-foreground">Complete a lesson or challenge to keep it alive.</p>
-            </div>
-            <Link to="/daily" className="bg-amber-500 text-white text-xs font-extrabold px-3 py-2 rounded-xl active:scale-95 shrink-0">
-              Go →
-            </Link>
+            className="mx-4 mt-2 rounded-2xl bg-amber-500/10 border border-amber-500/30 px-4 py-2.5 flex items-center gap-3">
+            <span className="text-lg">🔥</span>
+            <p className="text-sm font-extrabold text-amber-400 flex-1">{streak}-day streak at risk!</p>
+            <Link to="/daily" className="bg-amber-500 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl active:scale-95 shrink-0">Go →</Link>
           </motion.div>
         )}
-
-        {/* Portfolio + country snapshot */}
-        {(() => {
-          const PORTFOLIO_KEY = 'wealthquest_portfolio';
-          const portfolio = (() => { try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) ?? 'null'); } catch { return null; } })();
-          const history = getPortfolioHistory();
-          const myCountryCode = getMyCountry();
-          const myCountry = myCountryCode ? getCountryByCode(myCountryCode) : null;
-          if (!portfolio) return null;
-          const cash = portfolio.cash ?? 10000;
-          const holdings = portfolio.holdings ?? [];
-          const totalValue = cash + holdings.reduce((s, h) => s + h.avgCost * h.shares, 0);
-          const gain = totalValue - 10000;
-          const gainPct = (gain / 10000) * 100;
-          const yesterday = history.length >= 2 ? history[history.length - 2]?.value : null;
-          const vsYesterday = yesterday ? ((totalValue - yesterday) / yesterday) * 100 : null;
-          const up = gain >= 0;
-          return (
-            <div className="px-4 pt-3">
-              <Link to="/portfolio">
-                <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4 active:scale-[0.98] transition-all">
-                  <div className="flex-1">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground mb-0.5">Your Portfolio</p>
-                    <p className="text-xl font-extrabold text-foreground">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {up ? '▲' : '▼'} {up ? '+' : ''}{gainPct.toFixed(2)}% all time
-                      </span>
-                      {vsYesterday !== null && (
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${vsYesterday >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                          {vsYesterday >= 0 ? '+' : ''}{vsYesterday.toFixed(2)}% today
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {myCountry && (
-                    <div className="text-right shrink-0">
-                      <p className="text-2xl">{myCountry.flag}</p>
-                      <p className="text-[10px] font-bold text-muted-foreground mt-0.5">{myCountry.name}</p>
-                    </div>
-                  )}
-                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                </div>
-              </Link>
-            </div>
-          );
-        })()}
-
-        {/* Weekly recap */}
-        <div className="pt-3">
-          <WeeklyRecap progress={progress} />
-        </div>
-
-        {/* Term of the Day */}
-        <div className="pt-1">
-          <TermOfTheDay />
-        </div>
-
-        {/* Daily missions */}
-        <div className="px-4 pt-1">
-          <DailyMissions />
-        </div>
 
         {/* ── Units ─────────────────────────────────────────────── */}
         {UNITS.map((unit, unitIdx) => {
@@ -474,8 +338,81 @@ export default function Learn() {
           );
         })}
 
+        {/* ── Bottom widgets (after lessons) ── */}
+        <div className="px-4 mt-6 space-y-3">
+
+          {/* Daily challenge */}
+          {!dailyDone && (
+            <Link to="/daily">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center justify-between active:scale-[0.98] transition-all">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🔥</span>
+                  <div>
+                    <p className="text-sm font-extrabold text-amber-400">Daily Challenge</p>
+                    <p className="text-xs text-muted-foreground">5 questions · +50 XP · +$20</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-500 shrink-0" />
+              </div>
+            </Link>
+          )}
+
+          {/* Portfolio snapshot */}
+          {(() => {
+            const port = (() => { try { return JSON.parse(localStorage.getItem('wealthquest_portfolio') ?? 'null'); } catch { return null; } })();
+            if (!port) return null;
+            const totalValue = (port.cash ?? 10000) + (port.holdings ?? []).reduce((s, h) => s + h.avgCost * h.shares, 0);
+            const gain = totalValue - 10000;
+            const pct = (gain / 10000) * 100;
+            const myCountryCode = getMyCountry();
+            const myCountry = myCountryCode ? getCountryByCode(myCountryCode) : null;
+            return (
+              <Link to="/portfolio">
+                <div className="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-3 active:scale-[0.98] transition-all">
+                  <span className="text-xl">📈</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-muted-foreground">Portfolio</p>
+                    <p className="text-sm font-extrabold text-foreground">${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })} <span className={`text-xs font-bold ${pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{pct >= 0 ? '+' : ''}{pct.toFixed(2)}%</span></p>
+                  </div>
+                  {myCountry && <span className="text-2xl">{myCountry.flag}</span>}
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                </div>
+              </Link>
+            );
+          })()}
+
+          {/* Country / league */}
+          {(() => {
+            const myCountryCode = getMyCountry();
+            const myCountry = myCountryCode ? getCountryByCode(myCountryCode) : null;
+            return (
+              <Link to="/league">
+                <div className="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-3 active:scale-[0.98] transition-all">
+                  <span className="text-2xl">{myCountry ? myCountry.flag : '🌍'}</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-muted-foreground">League</p>
+                    <p className="text-sm font-extrabold text-foreground">{myCountry ? `Representing ${myCountry.name}` : 'Set your country'}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                </div>
+              </Link>
+            );
+          })()}
+        </div>
+
+        {/* Weekly recap + term + missions */}
+        <div className="mt-4">
+          <WeeklyRecap progress={progress} />
+        </div>
+        <div className="mt-2">
+          <TermOfTheDay />
+        </div>
+        <div className="px-4 mt-2">
+          <DailyMissions />
+        </div>
+
         {/* News Feed */}
-        <div className="mx-4 mt-6 mb-2">
+        <div className="mx-4 mt-4 mb-2">
           <NewsFeed />
         </div>
 
