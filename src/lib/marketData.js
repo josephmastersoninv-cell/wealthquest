@@ -426,3 +426,31 @@ export function generateAllTimeCurve(assetId, currentPrice, n = 60) {
   pts[n - 1] = currentPrice;
   return pts;
 }
+
+// ── OHLC candle history ending at currentPrice (for TradingView-style chart) ──
+export function generateCandles(assetId, currentPrice, tf = '1M', count = 70) {
+  const TF_MIN = { '1M': 1, '5M': 5, '15M': 15, '1H': 60, '4H': 240, '1D': 1440 };
+  const tfMin = TF_MIN[tf] ?? 1;
+  const baseVol = ASSET_VOL[assetId] ?? 0.004;
+  const candleVol = baseVol * 5 * Math.sqrt(Math.max(tfMin, 1));
+
+  // Seed per asset+tf+day — chart shape is stable within a trading day
+  let seed = [...(assetId + tf)].reduce((a, c) => a + c.charCodeAt(0), 0)
+           + Math.floor(Date.now() / 86400000);
+  const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xFFFFFFFF; };
+
+  const candles = [];
+  let closePrice = currentPrice;
+
+  for (let i = count - 1; i >= 0; i--) {
+    const bodyMove = (rng() - 0.5) * candleVol;
+    const openPrice = closePrice / (1 + bodyMove);
+    const high = Math.max(openPrice, closePrice) * (1 + rng() * candleVol * 0.4);
+    const low  = Math.min(openPrice, closePrice) * (1 - rng() * candleVol * 0.4);
+    const vol  = (200000 + rng() * 1500000) * (1 + Math.abs(bodyMove) / (candleVol || 0.001));
+    candles.unshift({ o: openPrice, h: high, l: low, c: closePrice, v: vol,
+                      t: Date.now() - i * tfMin * 60000 });
+    closePrice = openPrice;
+  }
+  return candles;
+}

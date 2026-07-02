@@ -4,7 +4,7 @@ import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, Ey
          Trophy, Crown, Star, ArrowLeft, CheckCircle2, Lock, Clock, Activity } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { ASSETS, fetchAllPrices, syntheticPoints, SECTORS,
-         getMarketStatus, simulatePriceTick, IPO_DATA, generateAllTimeCurve } from '@/lib/marketData';
+         getMarketStatus, simulatePriceTick, IPO_DATA, generateAllTimeCurve, generateCandles } from '@/lib/marketData';
 import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { recordPortfolioValue, getPortfolioHistory } from '@/lib/portfolioHistory';
 import { calcPortfolioScore, getGradeColor } from '@/lib/portfolioScore';
@@ -138,7 +138,346 @@ function PortfolioChart({ history, startingCash, livePoints }) {
   );
 }
 
-// ─── Live 1-min stock chart (inside trade modal) ──────────────────────────────
+// ─── TradingView-style Candlestick Chart ──────────────────────────────────────
+const PRICE_PAD_R = 52;
+
+function CandlestickChart({ candles, currentPrice }) {
+  if (!candles?.length) return null;
+
+  const CHART_H = 210;
+  const VOL_GAP = 5;
+  const VOL_H   = 38;
+  const TOTAL_H = CHART_H + VOL_GAP + VOL_H;
+
+  const prices = candles.flatMap(c => [c.h, c.l]);
+  const pMin = Math.min(...prices);
+  const pMax = Math.max(...prices);
+  const pad  = (pMax - pMin) * 0.06 || pMax * 0.003;
+  const vMin = pMin - pad, vMax = pMax + pad;
+  const vRange = vMax - vMin || 1;
+  const volMax = Math.max(...candles.map(c => c.v)) || 1;
+
+  const py  = v => CHART_H - ((v - vMin) / vRange) * CHART_H;
+  const cW  = 340 / candles.length;
+  const bW  = Math.max(1, cW * 0.6);
+
+  const ma = candles.map((_, i) =>
+    i < 19 ? null : candles.slice(i - 19, i + 1).reduce((s, c) => s + c.c, 0) / 20
+  );
+  const maD = ma.reduce((acc, v, i) => {
+    if (!v) return acc;
+    const prev = ma[i - 1];
+    return acc + `${(!prev ? 'M' : 'L')} ${i * cW + cW / 2} ${py(v)} `;
+  }, '');
+
+  const curY = py(currentPrice);
+  const gridLevels = [0, 0.25, 0.5, 0.75, 1].map(t => vMin + t * vRange);
+  const fmtP = p => p >= 1000 ? p.toFixed(0) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
+
+  return (
+    <svg width="100%" height="100%" viewBox={`0 0 ${340 + PRICE_PAD_R} ${TOTAL_H}`}
+         preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+      {gridLevels.map((p, i) => {
+        const y = py(p);
+        return (
+          <g key={i}>
+            <line x1={0} y1={y} x2={340} y2={y} stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
+            <text x={344} y={y + 3} fill="rgba(255,255,255,0.22)" fontSize="7.5" fontFamily="monospace">{fmtP(p)}</text>
+          </g>
+        );
+      })}
+      {candles.map((c, i) => {
+        const x    = i * cW + cW / 2;
+        const green = c.c >= c.o;
+        const col  = green ? '#22c55e' : '#ef4444';
+        const bTop = py(Math.max(c.o, c.c));
+        const bBot = py(Math.min(c.o, c.c));
+        const bH   = Math.max(1, bBot - bTop);
+        return (
+          <g key={i}>
+            <line x1={x} y1={py(c.h)} x2={x} y2={py(c.l)} stroke={col} strokeWidth={Math.max(0.7, cW * 0.08)} />
+            <rect x={x - bW / 2} y={bTop} width={bW} height={bH} fill={col} opacity={i === candles.length - 1 ? 1 : 0.88} rx={0.5} />
+          </g>
+        );
+      })}
+      {maD && <path d={maD} fill="none" stroke="#f59e0b" strokeWidth={1} opacity={0.6} />}
+      <line x1={0} y1={curY} x2={340} y2={curY} stroke="#22c55e" strokeWidth={0.7} strokeDasharray="3 2" opacity={0.55} />
+      <rect x={341} y={curY - 7.5} width={PRICE_PAD_R - 2} height={15} fill="#22c55e" rx={2.5} />
+      <text x={341 + (PRICE_PAD_R - 2) / 2} y={curY + 4} fill="white" fontSize="8" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
+        {fmtP(currentPrice)}
+      </text>
+      {candles.map((c, i) => {
+        const x  = i * cW;
+        const bH = (c.v / volMax) * VOL_H;
+        return (
+          <rect key={i} x={x + 0.5} y={CHART_H + VOL_GAP + VOL_H - bH}
+            width={Math.max(0.5, cW - 1)} height={bH}
+            fill={c.c >= c.o ? '#22c55e' : '#ef4444'} opacity={0.32} />
+        );
+      })}
+      <text x={2} y={CHART_H + VOL_GAP + 9} fill="rgba(255,255,255,0.15)" fontSize="6.5" fontFamily="monospace">VOL</text>
+      <rect x={4} y={4} width={10} height={2} fill="#f59e0b" opacity={0.6} rx={1} />
+      <text x={17} y={9} fill="rgba(255,255,255,0.2)" fontSize="6.5" fontFamily="monospace">MA20</text>
+    </svg>
+  );
+}
+
+// ─── TradingView-style full-screen Chart Modal ────────────────────────────────
+const TF_LIST  = ['1M', '5M', '15M', '1H', '4H', '1D'];
+const TF_TICKS = { '1M': 8, '5M': 37, '15M': 112, '1H': 450, '4H': 1800, '1D': 10800 };
+
+function ChartModal({ asset, price, onClose, onTrade, cash, holding, marketStatus }) {
+  const [tf, setTf]           = useState('1M');
+  const [candles, setCandles] = useState(() => generateCandles(asset.id, price, '1M'));
+  const [mode, setMode]       = useState('buy');
+  const [dollars, setDollars] = useState('');
+  const [panel, setPanel]     = useState('chart');
+  const tickCount             = useRef(0);
+
+  const ipo       = IPO_DATA[asset.id];
+  const tradeable = canAssetTrade(asset, marketStatus);
+  const amt    = parseFloat(dollars) || 0;
+  const shares = price > 0 ? amt / price : 0;
+  const maxSell   = holding ? holding.shares * price : 0;
+  const activeMax = mode === 'buy' ? cash : maxSell;
+  const canReview = amt > 0 && shares > 0 && amt <= activeMax && tradeable;
+  const cashAfter = mode === 'buy' ? cash - amt : cash + shares * price;
+
+  useEffect(() => {
+    setCandles(prev => {
+      const upd  = [...prev];
+      const last = { ...upd[upd.length - 1], c: price };
+      last.h = Math.max(last.h, price);
+      last.l = Math.min(last.l, price);
+      upd[upd.length - 1] = last;
+      return upd;
+    });
+    tickCount.current++;
+    if (tickCount.current >= (TF_TICKS[tf] ?? 8)) {
+      tickCount.current = 0;
+      setCandles(prev => [
+        ...prev.slice(-69),
+        { o: price, h: price, l: price, c: price, v: 300000, t: Date.now() },
+      ]);
+    }
+  }, [price]);
+
+  function switchTf(newTf) {
+    setTf(newTf);
+    tickCount.current = 0;
+    setCandles(generateCandles(asset.id, price, newTf));
+  }
+
+  const last       = candles[candles.length - 1];
+  const first      = candles[0];
+  const sessionPct = first ? ((price - first.o) / first.o) * 100 : 0;
+  const positive   = sessionPct >= 0;
+  const allTimeRet = ipo ? ((price - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
+  const fmtP = p => p >= 1000 ? p.toFixed(0) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 60 }} animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 60 }} transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ background: '#0b0e14' }}>
+
+      {/* Top bar */}
+      <div className="flex items-center gap-3 px-4 pt-12 pb-3 border-b"
+           style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+        <button onClick={onClose} className="p-1.5 rounded-lg active:scale-90"
+                style={{ background: 'rgba(255,255,255,0.08)' }}>
+          <X className="w-4 h-4 text-white/50" />
+        </button>
+        <span className="text-2xl">{asset.emoji}</span>
+        <div>
+          <p className="font-extrabold text-white text-base leading-none">{asset.symbol}</p>
+          <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>{asset.name}</p>
+        </div>
+        <div className="ml-auto text-right">
+          <p className="font-extrabold text-white text-xl leading-none tabular-nums">${fmtP(price)}</p>
+          <p className={`text-xs font-extrabold mt-0.5 ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {positive ? '+' : ''}{sessionPct.toFixed(2)}%
+          </p>
+        </div>
+      </div>
+
+      {/* OHLC bar */}
+      {last && (
+        <div className="flex items-center gap-3 px-4 py-1.5"
+             style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+          {[['O', fmtP(last.o), 'rgba(255,255,255,0.55)'], ['H', fmtP(last.h), '#22c55e'], ['L', fmtP(last.l), '#ef4444'], ['C', fmtP(price), 'rgba(255,255,255,0.7)']].map(([lbl, val, col]) => (
+            <span key={lbl} style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, fontFamily: 'monospace' }}>
+              {lbl}&nbsp;<span style={{ color: col }}>{val}</span>
+            </span>
+          ))}
+          {allTimeRet !== null && (
+            <span className="ml-auto text-emerald-400 font-extrabold" style={{ fontSize: 10 }}>
+              {formatIPOReturn(allTimeRet)} since IPO
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Timeframe selector */}
+      <div className="flex items-center gap-0.5 px-3 py-2"
+           style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+        {TF_LIST.map(t => (
+          <button key={t} onClick={() => switchTf(t)}
+            className="px-2.5 py-1 rounded text-xs font-extrabold transition-all active:scale-95"
+            style={{ background: tf === t ? 'rgba(255,255,255,0.13)' : 'transparent', color: tf === t ? 'white' : 'rgba(255,255,255,0.28)' }}>
+            {t}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9 }}>5× LIVE</span>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="flex-1 px-2 py-2 min-h-0">
+        <CandlestickChart candles={candles} currentPrice={price} />
+      </div>
+
+      {/* Bottom panel */}
+      <div className="border-t px-4 pb-10 pt-4"
+           style={{ borderColor: 'rgba(255,255,255,0.07)', background: '#13161f' }}>
+
+        {!tradeable && (
+          <div className="flex items-center gap-3 py-2 mb-3 px-3 rounded-2xl"
+               style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+            <div>
+              <p className="text-sm font-extrabold text-white">NYSE {marketStatus.label}</p>
+              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                {marketStatus.countdown ? `Opens in ${marketStatus.countdown}` : 'Mon–Fri 9:30–16:00 ET'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {panel === 'chart' && (
+          <>
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => { setMode('buy'); setPanel('order'); }} disabled={!tradeable}
+                className="flex-1 py-4 rounded-2xl font-extrabold text-white text-base active:scale-[0.97] disabled:opacity-30 transition-all"
+                style={{ background: '#22c55e', boxShadow: '0 4px 20px rgba(34,197,94,0.25)' }}>Buy</button>
+              <button onClick={() => { setMode('sell'); setPanel('order'); }} disabled={!tradeable || !holding}
+                className="flex-1 py-4 rounded-2xl font-extrabold text-white text-base active:scale-[0.97] disabled:opacity-30 transition-all"
+                style={{ background: '#ef4444', boxShadow: '0 4px 20px rgba(239,68,68,0.25)' }}>Sell</button>
+            </div>
+            <div className="flex items-center justify-between" style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+              <span>Cash&nbsp;<span style={{ color: 'rgba(255,255,255,0.6)' }}>${cash.toFixed(2)}</span></span>
+              {holding && <span>Held&nbsp;<span style={{ color: 'rgba(255,255,255,0.6)' }}>{holding.shares.toFixed(4)} sh</span></span>}
+              {asset.type === 'crypto' && <span style={{ color: '#a78bfa', fontWeight: 800 }}>Crypto 24/7</span>}
+            </div>
+          </>
+        )}
+
+        {panel === 'order' && (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <button onClick={() => setPanel('chart')} className="p-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                <ArrowLeft className="w-4 h-4 text-white/50" />
+              </button>
+              <div className="flex rounded-xl p-0.5 flex-1" style={{ background: 'rgba(255,255,255,0.07)' }}>
+                {['buy', 'sell'].map(m => (
+                  <button key={m} onClick={() => setMode(m)}
+                    className="flex-1 py-2 rounded-lg text-xs font-extrabold capitalize transition-all active:scale-95"
+                    style={mode === m ? { background: m === 'buy' ? '#22c55e' : '#ef4444', color: 'white' } : { color: 'rgba(255,255,255,0.35)' }}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="relative mb-3">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-extrabold" style={{ color: 'rgba(255,255,255,0.3)' }}>$</span>
+              <input type="number" inputMode="decimal" value={dollars} onChange={e => setDollars(e.target.value)}
+                placeholder="0.00" autoFocus
+                className="w-full rounded-xl py-3.5 pl-9 pr-4 font-extrabold text-xl text-right text-white focus:outline-none"
+                style={{ background: 'rgba(255,255,255,0.08)' }} />
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 mb-3">
+              {(mode === 'buy'
+                ? [{ l:'25%', v: activeMax*.25 }, { l:'50%', v: activeMax*.50 }, { l:'75%', v: activeMax*.75 }, { l:'Max', v: activeMax }]
+                : [{ l:'25%', v: maxSell*.25  }, { l:'50%', v: maxSell*.50  }, { l:'75%', v: maxSell*.75  }, { l:'All', v: maxSell }]
+              ).map(({ l, v }) => (
+                <button key={l} onClick={() => setDollars(v.toFixed(2))}
+                  className="rounded-lg py-2 text-xs font-extrabold active:scale-95 transition-all"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>{l}</button>
+              ))}
+            </div>
+            {shares > 0 && (
+              <p className="text-center text-xs mb-3 tabular-nums" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                ≈ {shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4)} shares @ ${fmtP(price)}
+              </p>
+            )}
+            {amt > activeMax && amt > 0 && (
+              <p className="text-center text-xs text-rose-400 font-bold mb-3">
+                {mode === 'buy' ? 'Insufficient cash' : "You don't own that many shares"}
+              </p>
+            )}
+            <button onClick={() => canReview && setPanel('confirm')} disabled={!canReview}
+              className="w-full py-4 rounded-2xl font-extrabold text-white text-base active:scale-[0.98] disabled:opacity-25 transition-all"
+              style={{ background: mode === 'buy' ? '#22c55e' : '#ef4444',
+                       boxShadow: `0 4px 20px ${mode === 'buy' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+              Review {mode === 'buy' ? 'Buy' : 'Sell'} Order
+            </button>
+          </div>
+        )}
+
+        {panel === 'confirm' && (
+          <div>
+            <div className="rounded-2xl p-4 mb-4 space-y-3" style={{ background: 'rgba(255,255,255,0.05)' }}>
+              {[
+                { l: 'Action',     v: mode === 'buy' ? '🟢 BUY' : '🔴 SELL' },
+                { l: 'Asset',      v: `${asset.emoji} ${asset.symbol}` },
+                { l: 'Shares',     v: shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4) },
+                { l: 'Price',      v: `$${fmtP(price)}` },
+                { l: 'Total',      v: `$${amt.toFixed(2)}`, bold: true },
+                { l: 'Cash after', v: `$${cashAfter.toFixed(2)}`, col: cashAfter < 0 ? '#ef4444' : 'rgba(255,255,255,0.7)' },
+              ].map(r => (
+                <div key={r.l} className="flex justify-between items-center">
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{r.l}</span>
+                  <span style={{ fontSize: 12, fontWeight: r.bold ? 800 : 600, color: r.col ?? (r.bold ? 'white' : 'rgba(255,255,255,0.7)') }}>{r.v}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setPanel('order')}
+                className="flex-1 py-3.5 rounded-2xl font-extrabold text-sm active:scale-95"
+                style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>Back</button>
+              <button onClick={() => { setPanel('done'); setTimeout(() => onTrade(mode, shares, amt), 1200); }}
+                className="py-3.5 rounded-2xl font-extrabold text-white text-sm active:scale-[0.97] transition-all"
+                style={{ flex: 2, background: mode === 'buy' ? '#22c55e' : '#ef4444',
+                         boxShadow: `0 4px 16px ${mode === 'buy' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                Confirm {mode === 'buy' ? 'Buy' : 'Sell'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {panel === 'done' && (
+          <div className="flex flex-col items-center gap-2 py-3">
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 380, damping: 22 }}>
+              <CheckCircle2 className={`w-12 h-12 ${mode === 'buy' ? 'text-emerald-400' : 'text-rose-400'}`} />
+            </motion.div>
+            <p className="text-lg font-extrabold text-white">Order Filled</p>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              {mode === 'buy' ? 'Bought' : 'Sold'} {shares.toFixed(4)} {asset.symbol} @ ${fmtP(price)}
+            </p>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── (LivePriceChart kept for reference — replaced by CandlestickChart) ───────
 function LivePriceChart({ price, asset }) {
   const [pts, setPts] = useState([price]);
   const openRef = useRef(price);
@@ -1123,7 +1462,7 @@ export default function Portfolio() {
       {/* Trade Modal */}
       <AnimatePresence>
         {tradeAsset && (
-          <TradeModal
+          <ChartModal
             asset={tradeAsset}
             price={prices[tradeAsset.id]?.price ?? 0}
             cash={cash}
