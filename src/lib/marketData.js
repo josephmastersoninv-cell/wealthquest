@@ -233,3 +233,196 @@ export function syntheticPoints(price, change, count = 20) {
     return prevPrice + (price - prevPrice) * t + noise;
   });
 }
+
+// ── IPO / launch data: split-adjusted prices for all-time return ───────────────
+export const IPO_DATA = {
+  AAPL:  { date: '1980-12-12', ipoPrice: 0.10,    label: 'Dec 1980' },
+  MSFT:  { date: '1986-03-13', ipoPrice: 0.09,    label: 'Mar 1986' },
+  GOOGL: { date: '2004-08-19', ipoPrice: 4.25,    label: 'Aug 2004' },
+  NVDA:  { date: '1999-01-22', ipoPrice: 0.047,   label: 'Jan 1999' },
+  META:  { date: '2012-05-18', ipoPrice: 38.0,    label: 'May 2012' },
+  AVGO:  { date: '2009-08-06', ipoPrice: 15.0,    label: 'Aug 2009' },
+  TSM:   { date: '1997-10-09', ipoPrice: 10.4,    label: 'Oct 1997' },
+  ORCL:  { date: '1986-03-12', ipoPrice: 0.13,    label: 'Mar 1986' },
+  CRM:   { date: '2004-06-23', ipoPrice: 11.0,    label: 'Jun 2004' },
+  AMD:   { date: '1972-09-27', ipoPrice: 0.18,    label: 'Sep 1972' },
+  INTC:  { date: '1971-10-13', ipoPrice: 0.06,    label: 'Oct 1971' },
+  QCOM:  { date: '1991-12-13', ipoPrice: 0.75,    label: 'Dec 1991' },
+  ADBE:  { date: '1986-08-20', ipoPrice: 0.42,    label: 'Aug 1986' },
+  NOW:   { date: '2012-06-29', ipoPrice: 18.0,    label: 'Jun 2012' },
+  SNOW:  { date: '2020-09-16', ipoPrice: 120.0,   label: 'Sep 2020' },
+  PLTR:  { date: '2020-09-30', ipoPrice: 10.0,    label: 'Sep 2020' },
+  PANW:  { date: '2012-07-20', ipoPrice: 42.0,    label: 'Jul 2012' },
+  AMZN:  { date: '1997-05-15', ipoPrice: 0.90,    label: 'May 1997' },
+  TSLA:  { date: '2010-06-29', ipoPrice: 1.13,    label: 'Jun 2010' },
+  WMT:   { date: '1972-08-25', ipoPrice: 0.05,    label: 'Aug 1972' },
+  MCD:   { date: '1965-04-21', ipoPrice: 0.08,    label: 'Apr 1965' },
+  NKE:   { date: '1980-12-02', ipoPrice: 0.18,    label: 'Dec 1980' },
+  SBUX:  { date: '1992-06-26', ipoPrice: 0.54,    label: 'Jun 1992' },
+  COST:  { date: '1985-12-05', ipoPrice: 2.50,    label: 'Dec 1985' },
+  HD:    { date: '1981-09-22', ipoPrice: 0.33,    label: 'Sep 1981' },
+  NFLX:  { date: '2002-05-23', ipoPrice: 2.14,    label: 'May 2002' },
+  DIS:   { date: '1957-11-12', ipoPrice: 0.07,    label: 'Nov 1957' },
+  JPM:   { date: '1969-03-05', ipoPrice: 0.12,    label: 'Mar 1969' },
+  V:     { date: '2008-03-19', ipoPrice: 44.0,    label: 'Mar 2008' },
+  MA:    { date: '2006-05-25', ipoPrice: 3.90,    label: 'May 2006' },
+  BAC:   { date: '1972-01-01', ipoPrice: 0.06,    label: 'Jan 1972' },
+  GS:    { date: '1999-05-04', ipoPrice: 53.0,    label: 'May 1999' },
+  PYPL:  { date: '2015-07-20', ipoPrice: 36.0,    label: 'Jul 2015' },
+  AXP:   { date: '1977-05-18', ipoPrice: 0.25,    label: 'May 1977' },
+  BLK:   { date: '1999-10-01', ipoPrice: 14.0,    label: 'Oct 1999' },
+  C:     { date: '1977-01-01', ipoPrice: 0.60,    label: 'Jan 1977' },
+  JNJ:   { date: '1944-09-24', ipoPrice: 0.04,    label: 'Sep 1944' },
+  UNH:   { date: '1984-10-17', ipoPrice: 0.25,    label: 'Oct 1984' },
+  LLY:   { date: '1952-01-01', ipoPrice: 0.22,    label: 'Jan 1952' },
+  PFE:   { date: '1972-01-01', ipoPrice: 0.15,    label: 'Jan 1972' },
+  ABBV:  { date: '2013-01-02', ipoPrice: 20.0,    label: 'Jan 2013' },
+  MRK:   { date: '1946-06-21', ipoPrice: 0.05,    label: 'Jun 1946' },
+  XOM:   { date: '1970-01-01', ipoPrice: 0.20,    label: 'Jan 1970' },
+  CVX:   { date: '1984-01-01', ipoPrice: 1.00,    label: 'Jan 1984' },
+  COP:   { date: '1981-01-01', ipoPrice: 1.50,    label: 'Jan 1981' },
+  NEE:   { date: '1984-01-01', ipoPrice: 0.35,    label: 'Jan 1984' },
+  CAT:   { date: '1929-01-01', ipoPrice: 0.10,    label: 'Jan 1929' },
+  BA:    { date: '1962-01-01', ipoPrice: 0.08,    label: 'Jan 1962' },
+  GE:    { date: '1962-01-01', ipoPrice: 0.06,    label: 'Jan 1962' },
+  LMT:   { date: '1977-01-01', ipoPrice: 0.20,    label: 'Jan 1977' },
+  UPS:   { date: '1999-11-09', ipoPrice: 50.0,    label: 'Nov 1999' },
+  T:     { date: '1984-11-21', ipoPrice: 0.30,    label: 'Nov 1984' },
+  VZ:    { date: '1983-11-21', ipoPrice: 0.50,    label: 'Nov 1983' },
+  FCX:   { date: '1995-01-01', ipoPrice: 2.00,    label: 'Jan 1995' },
+  NEM:   { date: '1987-01-01', ipoPrice: 0.60,    label: 'Jan 1987' },
+  AMT:   { date: '1998-06-04', ipoPrice: 15.0,    label: 'Jun 1998' },
+  SPY:   { date: '1993-01-22', ipoPrice: 43.94,   label: 'Jan 1993' },
+  QQQ:   { date: '1999-03-10', ipoPrice: 53.14,   label: 'Mar 1999' },
+  VTI:   { date: '2001-05-24', ipoPrice: 73.04,   label: 'May 2001' },
+  IWM:   { date: '2000-05-22', ipoPrice: 52.05,   label: 'May 2000' },
+  GLD:   { date: '2004-11-18', ipoPrice: 44.79,   label: 'Nov 2004' },
+  SLV:   { date: '2006-04-28', ipoPrice: 14.00,   label: 'Apr 2006' },
+  TLT:   { date: '2002-07-26', ipoPrice: 88.00,   label: 'Jul 2002' },
+  ARKK:  { date: '2014-10-31', ipoPrice: 20.00,   label: 'Oct 2014' },
+  SOXX:  { date: '2001-07-13', ipoPrice: 37.00,   label: 'Jul 2001' },
+  XLE:   { date: '1998-12-22', ipoPrice: 39.43,   label: 'Dec 1998' },
+  XLF:   { date: '1998-12-22', ipoPrice: 13.00,   label: 'Dec 1998' },
+  XLV:   { date: '1998-12-22', ipoPrice: 21.00,   label: 'Dec 1998' },
+  bitcoin:  { date: '2010-07-17', ipoPrice: 0.0009,  label: 'Jul 2010' },
+  ethereum: { date: '2015-08-07', ipoPrice: 0.31,    label: 'Aug 2015' },
+  solana:   { date: '2020-03-24', ipoPrice: 0.95,    label: 'Mar 2020' },
+  ripple:   { date: '2013-08-04', ipoPrice: 0.005,   label: 'Aug 2013' },
+  cardano:  { date: '2017-10-01', ipoPrice: 0.02,    label: 'Oct 2017' },
+  dogecoin: { date: '2013-12-19', ipoPrice: 0.0002,  label: 'Dec 2013' },
+};
+
+// ── Per-asset base volatility (amplified by speed multiplier during simulation) ─
+const ASSET_VOL = {
+  bitcoin: 0.012, ethereum: 0.013, solana: 0.018, ripple: 0.016, cardano: 0.015, dogecoin: 0.022,
+  TSLA: 0.010, NVDA: 0.009, PLTR: 0.009, SNOW: 0.008, ARKK: 0.009, AMD: 0.008,
+  NFLX: 0.006, META: 0.006, PYPL: 0.007, LLY: 0.006, FCX: 0.006,
+  GOOGL: 0.005, AMZN: 0.005, CRM: 0.005, NOW: 0.005, ADBE: 0.005, GS: 0.005,
+  AVGO: 0.005, TSM: 0.005, PANW: 0.005, DIS: 0.005, BA: 0.005, UNH: 0.005,
+  AAPL: 0.004, MSFT: 0.004, QCOM: 0.004, INTC: 0.004, NKE: 0.004,
+  SBUX: 0.004, AXP: 0.004, BAC: 0.004, MA: 0.004, JPM: 0.004, XOM: 0.004,
+  ABBV: 0.004, ORCL: 0.004, GE: 0.004, CAT: 0.004, CVX: 0.004, COP: 0.005,
+  COST: 0.003, HD: 0.003, WMT: 0.003, MCD: 0.003, V: 0.003, JNJ: 0.003,
+  MRK: 0.003, PFE: 0.003, NEE: 0.003, LMT: 0.003, UPS: 0.003, AMT: 0.003,
+  T: 0.002, VZ: 0.002,
+  SPY: 0.0018, VTI: 0.0018, QQQ: 0.0025, IWM: 0.003,
+  GLD: 0.003, SLV: 0.004, TLT: 0.003, XLE: 0.004, XLF: 0.003, XLV: 0.002, SOXX: 0.004,
+};
+
+// Simulate one price tick at 5× speed — call this on an interval during market hours
+export function simulatePriceTick(prices, multiplier = 5) {
+  const next = {};
+  Object.entries(prices).forEach(([id, pd]) => {
+    const vol = (ASSET_VOL[id] ?? 0.004) * multiplier;
+    const move = (Math.random() - 0.488) * vol; // 0.488 gives tiny upward drift
+    const base = pd.basePrice ?? pd.price;
+    const newPrice = Math.max(pd.price * (1 + move), base * 0.25);
+    const points = [...(pd.points?.slice(-49) ?? []), newPrice];
+    next[id] = { ...pd, price: newPrice, change: ((newPrice - base) / base) * 100, points, basePrice: base };
+  });
+  return next;
+}
+
+// NYSE market hours — returns status object used across Portfolio
+export function getMarketStatus() {
+  const nyStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const ny    = new Date(nyStr);
+  const day = ny.getDay();
+  const h   = ny.getHours();
+  const m   = ny.getMinutes();
+  const min = h * 60 + m;
+  const OPEN  = 570;   // 9:30 AM ET
+  const CLOSE = 960;   // 4:00 PM ET
+  const isWD  = day >= 1 && day <= 5;
+  const isOpen = isWD && min >= OPEN && min < CLOSE;
+  const isPre  = isWD && h >= 4 && min < OPEN;
+  const isAH   = isWD && min >= CLOSE && h < 20;
+
+  let minsUntilOpen = null;
+  if (!isOpen) {
+    if (isPre) {
+      minsUntilOpen = OPEN - min;
+    } else {
+      const toMid = 1440 - min;
+      // How many extra full days until the next Monday (or next weekday)?
+      let extra = 0;
+      if (day === 5) extra = 2;   // Fri after close → Mon
+      else if (day === 6) extra = 1; // Sat → Mon
+      minsUntilOpen = toMid + extra * 1440 + OPEN;
+    }
+  }
+
+  const fmt = (mins) => {
+    if (!mins) return '';
+    const hh = Math.floor(mins / 60);
+    const mm  = mins % 60;
+    return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
+  };
+
+  return {
+    open: isOpen,
+    preMarket: isPre,
+    afterHours: isAH,
+    canTrade: isOpen,
+    label: isOpen ? 'Open' : isPre ? 'Pre-Market' : isAH ? 'After-Hours' : 'Closed',
+    color: isOpen ? 'emerald' : (isPre || isAH) ? 'amber' : 'rose',
+    minutesLeft: isOpen ? CLOSE - min : null,
+    countdown: fmt(minsUntilOpen),
+    nyTime: `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} ET`,
+  };
+}
+
+// Generate a synthetic all-time price curve from IPO → current price (60 data points)
+export function generateAllTimeCurve(assetId, currentPrice, n = 60) {
+  const ipo = IPO_DATA[assetId];
+  if (!ipo || !currentPrice || currentPrice <= 0) return [];
+  const { ipoPrice } = ipo;
+  if (ipoPrice <= 0) return [];
+  const asset = ASSETS.find(a => a.id === assetId);
+  const isCrypto = asset?.type === 'crypto';
+
+  // Seeded RNG so the curve is deterministic per asset
+  let seed = [...assetId].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xFFFFFFFF; };
+
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const trend = ipoPrice * Math.pow(Math.max(currentPrice / ipoPrice, 1.001), t);
+    let dip = 1;
+    if (isCrypto) {
+      // Crypto winter ~2018 and 2022 crash
+      if (t > 0.28 && t < 0.40) dip = 0.15 + rng() * 0.12;
+      if (t > 0.65 && t < 0.76) dip = 0.18 + rng() * 0.12;
+    } else {
+      // 2008-09 financial crisis and 2020 COVID crash
+      if (t > 0.32 && t < 0.44) dip = 0.55 + rng() * 0.18;
+      if (t > 0.78 && t < 0.86) dip = 0.62 + rng() * 0.15;
+    }
+    // Smooth entry/exit from dip (blend over 4 points on each edge)
+    const noise = trend * (rng() - 0.5) * 0.05;
+    pts.push(Math.max(trend * dip + noise, ipoPrice * 0.05));
+  }
+  pts[n - 1] = currentPrice;
+  return pts;
+}

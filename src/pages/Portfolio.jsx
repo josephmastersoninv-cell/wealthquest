@@ -1,8 +1,10 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, EyeOff, Trophy, Crown, Star, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, EyeOff,
+         Trophy, Crown, Star, ArrowLeft, CheckCircle2, Lock, Clock, Activity } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
-import { ASSETS, fetchAllPrices, syntheticPoints, SECTORS } from '@/lib/marketData';
+import { ASSETS, fetchAllPrices, syntheticPoints, SECTORS,
+         getMarketStatus, simulatePriceTick, IPO_DATA, generateAllTimeCurve } from '@/lib/marketData';
 import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { recordPortfolioValue, getPortfolioHistory } from '@/lib/portfolioHistory';
 import { calcPortfolioScore, getGradeColor } from '@/lib/portfolioScore';
@@ -11,29 +13,44 @@ import { toast } from 'sonner';
 import { fetchLeaderboard, syncPortfolioValue, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { getCountryByCode } from '@/lib/countryData';
 
-const PORTFOLIO_KEY = 'wealthquest_portfolio';
-const WATCHLIST_KEY = 'wealthquest_watchlist';
-const STARTING_CASH = 10000;
-const UNLOCK_LESSONS = 5;
+const PORTFOLIO_KEY   = 'wealthquest_portfolio';
+const WATCHLIST_KEY   = 'wealthquest_watchlist';
+const STARTING_CASH   = 10000;
+const UNLOCK_LESSONS  = 5;
+const TICK_INTERVAL   = 8000; // ms between live price ticks
+const SPEED_MULT      = 5;    // 5× amplified volatility
 
-// ─── Seeded RNG ───────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function seededRand(seed) {
   let s = seed;
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xFFFFFFFF; };
 }
 
+function formatIPOReturn(pct) {
+  if (pct >= 1e9)  return `+${(pct / 1e9).toFixed(1)}b%`;
+  if (pct >= 1e6)  return `+${(pct / 1e6).toFixed(1)}m%`;
+  if (pct >= 1000) return `+${Math.round(pct / 1000)}k%`;
+  return `+${Math.round(pct)}%`;
+}
+
+function canAssetTrade(asset, mktStatus) {
+  // Crypto trades 24/7; stocks & ETFs only during NYSE hours
+  return asset.type === 'crypto' || mktStatus.canTrade;
+}
+
+// ─── Leaderboard ghost players ────────────────────────────────────────────────
 function generateLeaderboard(prices) {
   const names = [
     { name: 'Jake M.',  avatar: '👨‍💼', badge: '🏆' },
-    { name: 'Sofia K.',  avatar: '👩‍💻', badge: '🔥' },
-    { name: 'Alex R.',   avatar: '👨‍🎓', badge: '📈' },
-    { name: 'Priya S.',  avatar: '👩‍🔬', badge: '💎' },
-    { name: 'Tom B.',    avatar: '🧑‍🚀', badge: '⚡' },
-    { name: 'Lea C.',    avatar: '👩‍🏫', badge: '🌟' },
-    { name: 'Finn D.',   avatar: '🧑‍🎨', badge: '🚀' },
-    { name: 'Mia W.',    avatar: '👩‍💼', badge: '💰' },
-    { name: 'Noah T.',   avatar: '👨‍🔬', badge: '📊' },
-    { name: 'Yuki A.',   avatar: '👩‍🎤', badge: '✨' },
+    { name: 'Sofia K.', avatar: '👩‍💻', badge: '🔥' },
+    { name: 'Alex R.',  avatar: '👨‍🎓', badge: '📈' },
+    { name: 'Priya S.', avatar: '👩‍🔬', badge: '💎' },
+    { name: 'Tom B.',   avatar: '🧑‍🚀', badge: '⚡' },
+    { name: 'Lea C.',   avatar: '👩‍🏫', badge: '🌟' },
+    { name: 'Finn D.',  avatar: '🧑‍🎨', badge: '🚀' },
+    { name: 'Mia W.',   avatar: '👩‍💼', badge: '💰' },
+    { name: 'Noah T.',  avatar: '👨‍🔬', badge: '📊' },
+    { name: 'Yuki A.',  avatar: '👩‍🎤', badge: '✨' },
   ];
   return names.map((p, i) => {
     const rand = seededRand(i * 31337 + 9999);
@@ -76,7 +93,7 @@ function Sparkline({ points, positive, width = 64, height = 28 }) {
   );
 }
 
-// ─── Portfolio chart ──────────────────────────────────────────────────────────
+// ─── Portfolio history chart ──────────────────────────────────────────────────
 function PortfolioChart({ history, startingCash }) {
   if (history.length < 2) {
     return (
@@ -108,27 +125,125 @@ function PortfolioChart({ history, startingCash }) {
   );
 }
 
-// ─── Trade Modal (brokerage-style: amount → confirm → executed) ───────────────
-function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
+// ─── Market Status Banner ─────────────────────────────────────────────────────
+function MarketBanner({ status }) {
+  const colorMap = {
+    emerald: { bg: 'bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-400', text: 'text-emerald-400', pulse: true },
+    amber:   { bg: 'bg-amber-500/10 border-amber-500/20',   dot: 'bg-amber-400',   text: 'text-amber-400',   pulse: false },
+    rose:    { bg: 'bg-rose-500/10 border-rose-500/20',     dot: 'bg-rose-400',    text: 'text-rose-400',    pulse: false },
+  };
+  const c = colorMap[status.color] ?? colorMap.rose;
+  return (
+    <div className={`flex items-center justify-between px-3 py-2 rounded-xl border ${c.bg} mb-3`}>
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2.5 w-2.5">
+          {c.pulse && <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${c.dot} opacity-60`} />}
+          <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${c.dot}`} />
+        </span>
+        <span className={`text-xs font-extrabold ${c.text}`}>NYSE {status.label}</span>
+        <span className="text-xs text-muted-foreground">· {status.nyTime}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {status.open && status.minutesLeft && (
+          <span className="text-xs text-muted-foreground">Closes in {Math.floor(status.minutesLeft / 60)}h {status.minutesLeft % 60}m</span>
+        )}
+        {!status.open && status.countdown && (
+          <span className="text-xs text-muted-foreground">Opens in {status.countdown}</span>
+        )}
+        <span className="text-[10px] font-extrabold text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+          {status.open ? '5× LIVE' : status.color === 'amber' ? 'LIMITED' : 'FROZEN'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Market Mood ──────────────────────────────────────────────────────────────
+function MarketMood({ prices }) {
+  const list = ASSETS.filter(a => prices[a.id]);
+  const upCount = list.filter(a => (prices[a.id]?.change ?? 0) > 0).length;
+  const ratio = list.length > 0 ? upCount / list.length : 0.5;
+  const mood = ratio > 0.65 ? 'Bullish' : ratio < 0.35 ? 'Bearish' : 'Neutral';
+  const color = ratio > 0.65 ? 'text-emerald-400' : ratio < 0.35 ? 'text-rose-400' : 'text-amber-400';
+  const emoji = ratio > 0.65 ? '🐂' : ratio < 0.35 ? '🐻' : '😐';
+  return (
+    <div className="flex items-center gap-1.5 bg-muted/60 rounded-xl px-3 py-1.5">
+      <span className="text-sm">{emoji}</span>
+      <span className={`text-xs font-extrabold ${color}`}>{mood}</span>
+      <span className="text-xs text-muted-foreground">· {upCount}/{list.length} up</span>
+    </div>
+  );
+}
+
+// ─── Trade Modal ──────────────────────────────────────────────────────────────
+function TradeModal({ asset, price, onClose, onTrade, cash, holding, marketStatus }) {
   const [mode, setMode]   = useState('buy');
   const [dollars, setDollars] = useState('');
-  const [step, setStep]   = useState('amount'); // 'amount' | 'confirm' | 'done'
+  const [step, setStep]   = useState('amount');
 
+  const tradeable = canAssetTrade(asset, marketStatus);
   const amt    = parseFloat(dollars) || 0;
   const shares = price > 0 ? amt / price : 0;
-
-  const maxSell      = holding ? holding.shares * price : 0;
-  const activeMax    = mode === 'buy' ? cash : maxSell;
-  const canReview    = amt > 0 && shares > 0 && amt <= activeMax;
-  const cashAfter    = mode === 'buy' ? cash - amt : cash + (shares * price);
-  const changeInfo   = asset.change ?? 0;
-  const positive     = changeInfo >= 0;
+  const maxSell   = holding ? holding.shares * price : 0;
+  const activeMax = mode === 'buy' ? cash : maxSell;
+  const canReview = amt > 0 && shares > 0 && amt <= activeMax && tradeable;
+  const cashAfter = mode === 'buy' ? cash - amt : cash + (shares * price);
+  const changeInfo = asset.change ?? 0;
+  const positive = changeInfo >= 0;
+  const ipo = IPO_DATA[asset.id];
+  const allTimeReturn = ipo ? ((price - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
 
   function confirm() {
     setStep('done');
-    setTimeout(() => {
-      onTrade(mode, shares, amt);
-    }, 1200);
+    setTimeout(() => { onTrade(mode, shares, amt); }, 1200);
+  }
+
+  // Market closed screen for non-crypto
+  if (!tradeable && step === 'amount') {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-4" onClick={onClose}>
+        <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
+          className="bg-card rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="p-8 flex flex-col items-center text-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-rose-500/15 flex items-center justify-center">
+              <Lock className="w-8 h-8 text-rose-400" />
+            </div>
+            <div>
+              <p className="text-xl font-extrabold text-foreground mb-1">Market Closed</p>
+              <p className="text-sm text-muted-foreground">
+                NYSE is currently {marketStatus.label.toLowerCase()}.<br />
+                {marketStatus.countdown
+                  ? `Opens in ${marketStatus.countdown}`
+                  : 'Check back during trading hours.'}
+              </p>
+            </div>
+            <div className="bg-muted rounded-2xl p-3 w-full">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{asset.emoji}</span>
+                <div className="text-left">
+                  <p className="font-extrabold text-foreground">{asset.symbol}</p>
+                  <p className={`text-sm font-bold ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="ml-1">{positive ? '▲' : '▼'}{Math.abs(changeInfo).toFixed(2)}%</span>
+                  </p>
+                </div>
+                {allTimeReturn !== null && (
+                  <div className="ml-auto text-right">
+                    <p className="text-[10px] text-muted-foreground">Since IPO</p>
+                    <p className="text-xs font-extrabold text-emerald-400">{formatIPOReturn(allTimeReturn)}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">NYSE Trading Hours: Mon–Fri 9:30–16:00 ET</p>
+            <button onClick={onClose} className="w-full py-3 rounded-2xl bg-muted text-foreground font-extrabold text-sm active:scale-95">
+              Got it
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
   }
 
   return (
@@ -137,11 +252,10 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
       <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
         className="bg-card rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
 
-        {/* ── Step: Amount entry ── */}
+        {/* Amount entry */}
         {step === 'amount' && (
           <div className="p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-2xl">{asset.emoji}</div>
                 <div>
@@ -150,7 +264,7 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <p className="font-extrabold text-foreground">${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: price >= 10 ? 2 : 4 })}</p>
                     <span className={`text-xs font-extrabold ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {positive ? '▲' : '▼'} {Math.abs(changeInfo).toFixed(2)}%
+                      {positive ? '▲' : '▼'}{Math.abs(changeInfo).toFixed(2)}%
                     </span>
                   </div>
                 </div>
@@ -158,20 +272,52 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
               <button onClick={onClose} className="p-2 rounded-xl bg-muted text-muted-foreground active:scale-95"><X className="w-4 h-4" /></button>
             </div>
 
+            {/* IPO return badge */}
+            {allTimeReturn !== null && (
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2 mb-4">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <p className="text-xs text-emerald-400 font-bold">
+                  {formatIPOReturn(allTimeReturn)} since IPO ({ipo.label})
+                </p>
+              </div>
+            )}
+
+            {/* All-time sparkline */}
+            {ipo && (
+              <div className="mb-4 bg-muted/50 rounded-xl p-2">
+                <p className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest mb-1 px-1">All-Time Price Journey</p>
+                <Sparkline
+                  points={generateAllTimeCurve(asset.id, price)}
+                  positive={allTimeReturn >= 0}
+                  width={280} height={48}
+                />
+                <div className="flex justify-between px-1 mt-0.5">
+                  <span className="text-[9px] text-muted-foreground">{ipo.label} ${ipo.ipoPrice < 0.01 ? ipo.ipoPrice.toFixed(4) : ipo.ipoPrice.toFixed(2)}</span>
+                  <span className="text-[9px] text-muted-foreground">Today</span>
+                </div>
+              </div>
+            )}
+
+            {/* Crypto 24/7 badge */}
+            {asset.type === 'crypto' && (
+              <div className="flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 rounded-xl px-3 py-2 mb-4">
+                <Activity className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+                <p className="text-xs text-violet-400 font-bold">Crypto trades 24/7 — market always open</p>
+              </div>
+            )}
+
             {/* Buy / Sell toggle */}
-            <div className="flex rounded-xl bg-muted p-1 mb-5">
+            <div className="flex rounded-xl bg-muted p-1 mb-4">
               {['buy', 'sell'].map(m => (
                 <button key={m} onClick={() => { setMode(m); setDollars(''); }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-extrabold capitalize transition-all ${
                     mode === m
                       ? m === 'buy' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-rose-500 text-white shadow-sm'
                       : 'text-muted-foreground'
-                  }`}>{m}
-                </button>
+                  }`}>{m}</button>
               ))}
             </div>
 
-            {/* Amount input */}
             <div className="relative mb-2">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-extrabold text-muted-foreground">$</span>
               <input
@@ -182,13 +328,11 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
               />
             </div>
 
-            {/* Share estimate */}
             <p className="text-xs text-muted-foreground text-right mb-4 pr-1">
               {shares > 0 ? `≈ ${shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4)} shares` : 'Enter amount'}
             </p>
 
-            {/* Quick % buttons */}
-            <div className="grid grid-cols-4 gap-2 mb-5">
+            <div className="grid grid-cols-4 gap-2 mb-4">
               {(mode === 'buy'
                 ? [{ l: '10%', v: activeMax * 0.10 }, { l: '25%', v: activeMax * 0.25 }, { l: '50%', v: activeMax * 0.50 }, { l: 'All', v: activeMax }]
                 : [{ l: '25%', v: maxSell * 0.25 }, { l: '50%', v: maxSell * 0.50 }, { l: '75%', v: maxSell * 0.75 }, { l: 'All', v: maxSell }]
@@ -200,16 +344,14 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
               ))}
             </div>
 
-            {/* Cash / position info */}
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-5 bg-muted/50 rounded-xl px-3 py-2.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-4 bg-muted/50 rounded-xl px-3 py-2.5">
               <span>{mode === 'buy' ? 'Available cash' : 'Position value'}</span>
               <span className="font-extrabold text-foreground">${activeMax.toFixed(2)}</span>
             </div>
 
-            {/* Validation message */}
             {amt > 0 && amt > activeMax && (
               <p className="text-xs text-rose-400 font-bold text-center mb-3">
-                {mode === 'buy' ? 'Insufficient cash' : 'You don\'t hold that many shares'}
+                {mode === 'buy' ? 'Insufficient cash' : "You don't hold that many shares"}
               </p>
             )}
 
@@ -224,7 +366,7 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
           </div>
         )}
 
-        {/* ── Step: Confirm ── */}
+        {/* Confirm */}
         {step === 'confirm' && (
           <div className="p-6">
             <div className="flex items-center gap-3 mb-6">
@@ -234,14 +376,12 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
               <p className="font-extrabold text-foreground text-lg">Confirm Order</p>
             </div>
 
-            {/* Order type badge */}
             <div className="flex items-center justify-center mb-4">
               <span className="text-xs font-extrabold bg-muted text-muted-foreground rounded-full px-4 py-1.5 tracking-widest uppercase">
                 Market Order · Instant Fill
               </span>
             </div>
 
-            {/* Order summary */}
             <div className="bg-muted rounded-2xl p-4 mb-4 space-y-3">
               <div className="flex items-center gap-3 pb-3 border-b border-border">
                 <span className="text-2xl">{asset.emoji}</span>
@@ -275,7 +415,7 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
           </div>
         )}
 
-        {/* ── Step: Done ── */}
+        {/* Done */}
         {step === 'done' && (
           <div className="p-10 flex flex-col items-center text-center">
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 20 }}>
@@ -292,28 +432,11 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
   );
 }
 
-// ─── Market Mood ──────────────────────────────────────────────────────────────
-function MarketMood({ prices }) {
-  const list = ASSETS.filter(a => prices[a.id]);
-  const upCount = list.filter(a => (prices[a.id]?.change ?? 0) > 0).length;
-  const ratio = list.length > 0 ? upCount / list.length : 0.5;
-  const mood = ratio > 0.65 ? 'Bullish' : ratio < 0.35 ? 'Bearish' : 'Neutral';
-  const color = ratio > 0.65 ? 'text-emerald-400' : ratio < 0.35 ? 'text-rose-400' : 'text-amber-400';
-  const emoji = ratio > 0.65 ? '🐂' : ratio < 0.35 ? '🐻' : '😐';
-  return (
-    <div className="flex items-center gap-1.5 bg-muted/60 rounded-xl px-3 py-1.5">
-      <span className="text-sm">{emoji}</span>
-      <span className={`text-xs font-extrabold ${color}`}>{mood}</span>
-      <span className="text-xs text-muted-foreground">· {upCount}/{list.length} up</span>
-    </div>
-  );
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Portfolio() {
   const { progress } = useUserProgress();
-  const [prices, setPrices] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [prices, setPrices]       = useState({});
+  const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [portfolio, setPortfolio] = useState(() => {
     try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) ?? 'null'); } catch { return null; }
@@ -321,20 +444,23 @@ export default function Portfolio() {
   const [watchlist, setWatchlist] = useState(() => {
     try { return JSON.parse(localStorage.getItem(WATCHLIST_KEY) ?? '[]'); } catch { return []; }
   });
-  const [tab, setTab] = useState('market');
-  const [sector, setSector] = useState('All');
+  const [tab, setTab]           = useState('market');
+  const [sector, setSector]     = useState('All');
   const [tradeAsset, setTradeAsset] = useState(null);
   const [showBalance, setShowBalance] = useState(true);
-  const [history, setHistory] = useState(getPortfolioHistory);
+  const [history, setHistory]   = useState(getPortfolioHistory);
   const [sortByMovers, setSortByMovers] = useState(false);
   const [expandedNews, setExpandedNews] = useState(null);
   const [milestone, setMilestone] = useState(null);
   const [realPlayers, setRealPlayers] = useState([]);
+  const [marketStatus, setMarketStatus] = useState(getMarketStatus);
+  const tickRef = useRef(null);
 
-  const lessons = progress?.completed_lessons?.length ?? 0;
+  const lessons  = progress?.completed_lessons?.length ?? 0;
   const unlocked = lessons >= UNLOCK_LESSONS;
   const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('portfolio');
 
+  // ── Init portfolio ──
   useEffect(() => {
     if (!localStorage.getItem(PORTFOLIO_KEY)) {
       const init = { cash: STARTING_CASH, holdings: [], trades: [] };
@@ -343,6 +469,7 @@ export default function Portfolio() {
     }
   }, []);
 
+  // ── Fetch real prices on mount ──
   const loadPrices = useCallback(async () => {
     setRefreshing(true);
     const p = await fetchAllPrices();
@@ -356,7 +483,39 @@ export default function Portfolio() {
 
   useEffect(() => { loadPrices(); }, [loadPrices]);
 
-  const cash = portfolio?.cash ?? STARTING_CASH;
+  // ── Live price simulation — 5× speed ──
+  useEffect(() => {
+    if (loading || Object.keys(prices).length === 0) return;
+    clearInterval(tickRef.current);
+    tickRef.current = setInterval(() => {
+      const status = getMarketStatus();
+      setMarketStatus(status);
+      setPrices(prev => {
+        const next = { ...prev };
+        Object.keys(prev).forEach(id => {
+          const asset = ASSETS.find(a => a.id === id);
+          // Crypto always moves; stocks only during NYSE hours
+          if (asset?.type === 'crypto' || status.open) {
+            // Use full multiplier when open, reduced for after-hours
+            const mult = status.open ? SPEED_MULT : asset?.type === 'crypto' ? 3 : 0;
+            if (mult === 0) return;
+            const single = simulatePriceTick({ [id]: prev[id] }, mult);
+            next[id] = single[id];
+          }
+        });
+        return next;
+      });
+    }, TICK_INTERVAL);
+    return () => clearInterval(tickRef.current);
+  }, [loading]); // only restart when loading changes
+
+  // ── Refresh market status every minute ──
+  useEffect(() => {
+    const id = setInterval(() => setMarketStatus(getMarketStatus()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  const cash     = portfolio?.cash ?? STARTING_CASH;
   const holdings = portfolio?.holdings ?? [];
 
   const totalValue = useMemo(() => {
@@ -364,7 +523,6 @@ export default function Portfolio() {
     return cash + inv;
   }, [holdings, prices, cash]);
 
-  // Record history + sync to Supabase after prices load
   useEffect(() => {
     if (!loading && totalValue > 0) {
       recordPortfolioValue(totalValue);
@@ -373,40 +531,33 @@ export default function Portfolio() {
     }
   }, [loading]);
 
-  // Fetch real leaderboard
   useEffect(() => {
     fetchLeaderboard().then(players => { if (players.length) setRealPlayers(players); });
   }, []);
 
-  const totalGain = totalValue - STARTING_CASH;
+  const totalGain    = totalValue - STARTING_CASH;
   const totalGainPct = (totalGain / STARTING_CASH) * 100;
-  const spyReturn = prices['SPY']?.change ?? 0;
+  const spyReturn    = prices['SPY']?.change ?? 0;
 
   const score = useMemo(() => calcPortfolioScore({
     holdings: holdings.map(h => ({ ...h, sector: ASSETS.find(a => a.id === h.assetId)?.sector })),
     prices, history, startingCash: STARTING_CASH,
   }), [holdings, prices, history]);
 
-  const myPlayerId = getMyPlayerId();
+  const myPlayerId   = getMyPlayerId();
   const myPlayerData = getMyPlayerData();
 
   const leaderboard = useMemo(() => {
     const ghosts = Object.keys(prices).length ? generateLeaderboard(prices) : [];
     if (!realPlayers.length) return ghosts;
-    // merge real players (excluding me — I'll be inserted at real portfolio value)
     const others = realPlayers
       .filter(p => p.id !== myPlayerId)
       .map(p => ({
-        id: p.id,
-        name: p.name,
-        avatar: p.avatar,
+        id: p.id, name: p.name, avatar: p.avatar,
         value: Number(p.portfolio_value),
         returnPct: ((Number(p.portfolio_value) - 10000) / 10000) * 100,
-        topHolding: null,
-        real: true,
-        countryCode: p.country_code,
+        topHolding: null, real: true, countryCode: p.country_code,
       }));
-    // pad with enough ghosts so leaderboard isn't empty
     const padded = others.length < 5 ? [...others, ...ghosts.slice(0, 10 - others.length)] : others;
     return padded.sort((a, b) => b.value - a.value);
   }, [realPlayers, prices, myPlayerId]);
@@ -424,6 +575,10 @@ export default function Portfolio() {
 
   function handleTrade(mode, shares, dollars) {
     const asset = tradeAsset;
+    if (!canAssetTrade(asset, marketStatus)) {
+      toast.error('Market is closed — trading not available right now');
+      return;
+    }
     const price = prices[asset.id]?.price ?? 0;
     const p = { ...portfolio, holdings: [...(portfolio?.holdings ?? [])], trades: [...(portfolio?.trades ?? [])] };
     if (mode === 'buy') {
@@ -476,35 +631,13 @@ export default function Portfolio() {
     .sort((a, b) => Math.abs(prices[b.id].change) - Math.abs(prices[a.id].change)).slice(0, 5), [prices]);
 
   const NEWS = useMemo(() => ({
-    Technology: [
-      { title: 'AI chip demand drives tech rally', sentiment: 'up', time: '2h ago' },
-      { title: 'Big Tech earnings beat expectations', sentiment: 'up', time: '5h ago' },
-      { title: 'Fed signals rate hold — tech benefits', sentiment: 'up', time: '1d ago' },
-    ],
-    Finance: [
-      { title: 'Banks report strong Q2 profits', sentiment: 'up', time: '3h ago' },
-      { title: 'Credit card spending rises 4%', sentiment: 'up', time: '6h ago' },
-    ],
-    Consumer: [
-      { title: 'Retail sales surprise to the upside', sentiment: 'up', time: '4h ago' },
-      { title: 'EV demand softens as rates stay high', sentiment: 'down', time: '8h ago' },
-    ],
-    Energy: [
-      { title: 'Oil climbs on OPEC supply cut rumours', sentiment: 'up', time: '1h ago' },
-      { title: 'Natural gas prices slide on warm weather', sentiment: 'down', time: '3h ago' },
-    ],
-    Healthcare: [
-      { title: 'Drug approvals fuel healthcare gains', sentiment: 'up', time: '2h ago' },
-      { title: 'Insurance costs weigh on UNH outlook', sentiment: 'down', time: '5h ago' },
-    ],
-    'Broad Market': [
-      { title: 'S&P 500 sets new intraday high', sentiment: 'up', time: '1h ago' },
-      { title: 'VIX near 12-month low', sentiment: 'up', time: '4h ago' },
-    ],
-    Crypto: [
-      { title: 'BTC surges on ETF inflow momentum', sentiment: 'up', time: '30m ago' },
-      { title: 'SEC weighs new crypto custody rules', sentiment: 'down', time: '3h ago' },
-    ],
+    Technology:    [{ title: 'AI chip demand drives tech rally', sentiment: 'up', time: '2h ago' }, { title: 'Big Tech earnings beat expectations', sentiment: 'up', time: '5h ago' }],
+    Finance:       [{ title: 'Banks report strong Q2 profits', sentiment: 'up', time: '3h ago' }, { title: 'Credit card spending rises 4%', sentiment: 'up', time: '6h ago' }],
+    Consumer:      [{ title: 'Retail sales surprise to the upside', sentiment: 'up', time: '4h ago' }, { title: 'EV demand softens as rates stay high', sentiment: 'down', time: '8h ago' }],
+    Energy:        [{ title: 'Oil climbs on OPEC supply cut rumours', sentiment: 'up', time: '1h ago' }, { title: 'Natural gas slides on warm weather', sentiment: 'down', time: '3h ago' }],
+    Healthcare:    [{ title: 'Drug approvals fuel healthcare gains', sentiment: 'up', time: '2h ago' }, { title: 'Insurance costs weigh on UNH outlook', sentiment: 'down', time: '5h ago' }],
+    'Broad Market':[{ title: 'S&P 500 sets new intraday high', sentiment: 'up', time: '1h ago' }, { title: 'VIX near 12-month low', sentiment: 'up', time: '4h ago' }],
+    Crypto:        [{ title: 'BTC surges on ETF inflow momentum', sentiment: 'up', time: '30m ago' }, { title: 'SEC weighs new crypto custody rules', sentiment: 'down', time: '3h ago' }],
   }), []);
 
   if (!unlocked) {
@@ -581,6 +714,10 @@ export default function Portfolio() {
         {/* ─── MARKET ─── */}
         {tab === 'market' && (
           <motion.div key="market" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pt-4">
+
+            {/* Market status banner */}
+            <MarketBanner status={marketStatus} />
+
             <div className="flex items-center justify-between mb-3">
               <MarketMood prices={prices} />
               <button onClick={() => setSortByMovers(v => !v)}
@@ -589,7 +726,7 @@ export default function Portfolio() {
               </button>
             </div>
 
-            {/* Hot movers chips */}
+            {/* Hot movers */}
             {!loading && hotMovers.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">🔥 Hot Today</p>
@@ -597,12 +734,15 @@ export default function Portfolio() {
                   {hotMovers.map(asset => {
                     const p = prices[asset.id];
                     const up = (p?.change ?? 0) >= 0;
+                    const ipo = IPO_DATA[asset.id];
+                    const atRet = ipo ? ((p?.price - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
                     return (
                       <button key={asset.id} onClick={() => setTradeAsset(asset)}
-                        className="flex-shrink-0 bg-card border border-border rounded-2xl p-3 min-w-[84px] active:scale-95 transition-all text-left">
+                        className="flex-shrink-0 bg-card border border-border rounded-2xl p-3 min-w-[90px] active:scale-95 transition-all text-left">
                         <p className="text-xl mb-0.5">{asset.emoji}</p>
                         <p className="text-xs font-extrabold text-foreground">{asset.symbol}</p>
                         <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{up ? '+' : ''}{p?.change?.toFixed(2) ?? '—'}%</p>
+                        {atRet !== null && <p className="text-[9px] text-muted-foreground">{formatIPOReturn(atRet)} IPO</p>}
                       </button>
                     );
                   })}
@@ -622,7 +762,7 @@ export default function Portfolio() {
 
             {/* Asset list */}
             {loading ? (
-              <div className="space-y-2">{Array.from({ length: 7 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-2xl animate-pulse" />)}</div>
+              <div className="space-y-2">{Array.from({ length: 7 }).map((_, i) => <div key={i} className="h-20 bg-muted rounded-2xl animate-pulse" />)}</div>
             ) : (
               <div className="space-y-1.5">
                 {filteredAssets.map(asset => {
@@ -630,6 +770,9 @@ export default function Portfolio() {
                   const up = (pd?.change ?? 0) >= 0;
                   const held = holdings.some(h => h.assetId === asset.id);
                   const watched = watchlist.includes(asset.id);
+                  const ipo = IPO_DATA[asset.id];
+                  const atRet = ipo && pd?.price ? ((pd.price - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
+                  const tradeable = canAssetTrade(asset, marketStatus);
                   return (
                     <div key={asset.id} className="flex items-center gap-3 bg-card border border-border rounded-2xl px-3 py-3 transition-all">
                       <span className="text-xl shrink-0">{asset.emoji}</span>
@@ -637,8 +780,12 @@ export default function Portfolio() {
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-extrabold text-foreground">{asset.symbol}</p>
                           {held && <span className="text-[9px] font-extrabold bg-primary/15 text-primary rounded px-1 py-0.5">HELD</span>}
+                          {asset.type === 'crypto' && <span className="text-[9px] font-extrabold bg-violet-500/15 text-violet-400 rounded px-1 py-0.5">24/7</span>}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{asset.name}</p>
+                        {atRet !== null && (
+                          <p className="text-[9px] text-emerald-400 font-bold">{formatIPOReturn(atRet)} since {ipo.label}</p>
+                        )}
                       </div>
                       <Sparkline points={pd?.points} positive={up} width={52} height={26} />
                       <div className="text-right shrink-0 min-w-[68px]">
@@ -646,9 +793,14 @@ export default function Portfolio() {
                         <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{up ? '+' : ''}{pd?.change?.toFixed(2) ?? '—'}%</p>
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
-                        <button onClick={() => setTradeAsset(asset)}
-                          className="bg-primary text-primary-foreground rounded-lg px-2.5 py-1 text-xs font-extrabold active:scale-95">
-                          Trade
+                        <button
+                          onClick={() => setTradeAsset(asset)}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-extrabold active:scale-95 transition-all flex items-center gap-1 ${
+                            tradeable
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted text-muted-foreground'
+                          }`}>
+                          {tradeable ? 'Trade' : <><Lock className="w-3 h-3" /> Closed</>}
                         </button>
                         <button onClick={() => toggleWatchlist(asset.id)}
                           className={`rounded-lg px-2.5 py-1 text-xs font-extrabold active:scale-95 ${watched ? 'bg-amber-400/20 text-amber-400' : 'bg-muted text-muted-foreground'}`}>
@@ -707,7 +859,6 @@ export default function Portfolio() {
         {/* ─── HOLDINGS ─── */}
         {tab === 'holdings' && (
           <motion.div key="holdings" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pt-4">
-            {/* Score card */}
             <div className="bg-card border border-border rounded-2xl p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
@@ -723,9 +874,9 @@ export default function Portfolio() {
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { label: 'Diversification', val: score.diversityScore, max: 35 },
-                  { label: 'Performance', val: Math.round(score.perfScore), max: 35 },
-                  { label: 'Activity', val: score.activityScore, max: 20 },
-                  { label: 'Consistency', val: score.historyScore, max: 10 },
+                  { label: 'Performance',     val: Math.round(score.perfScore), max: 35 },
+                  { label: 'Activity',        val: score.activityScore, max: 20 },
+                  { label: 'Consistency',     val: score.historyScore, max: 10 },
                 ].map(m => (
                   <div key={m.label} className="bg-muted rounded-xl p-2.5">
                     <div className="flex justify-between mb-1">
@@ -757,13 +908,15 @@ export default function Portfolio() {
                   {holdings.map(h => {
                     const asset = ASSETS.find(a => a.id === h.assetId);
                     if (!asset) return null;
-                    const pd = prices[h.assetId];
-                    const cur = pd?.price ?? h.avgCost;
+                    const pd   = prices[h.assetId];
+                    const cur  = pd?.price ?? h.avgCost;
                     const value = cur * h.shares;
-                    const cost = h.avgCost * h.shares;
-                    const gain = value - cost;
+                    const cost  = h.avgCost * h.shares;
+                    const gain  = value - cost;
                     const gainPct = (gain / cost) * 100;
                     const up = gain >= 0;
+                    const ipo = IPO_DATA[h.assetId];
+                    const atRet = ipo ? ((cur - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
                     return (
                       <div key={h.assetId} className="bg-card border border-border rounded-2xl p-4">
                         <div className="flex items-center gap-3 mb-2">
@@ -782,7 +935,10 @@ export default function Portfolio() {
                           </div>
                         </div>
                         <div className="flex items-center justify-between">
-                          <div className="text-xs text-muted-foreground">Avg ${h.avgCost.toFixed(2)} · Now ${cur.toFixed(2)}</div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Avg ${h.avgCost.toFixed(2)} · Now ${cur.toFixed(2)}</div>
+                            {atRet !== null && <div className="text-[10px] text-emerald-400 font-bold mt-0.5">{formatIPOReturn(atRet)} since IPO</div>}
+                          </div>
                           <div className="flex items-center gap-2">
                             <Sparkline points={pd?.points} positive={up} width={44} height={20} />
                             <button onClick={() => setTradeAsset(asset)}
@@ -796,7 +952,6 @@ export default function Portfolio() {
               </>
             )}
 
-            {/* Trade history */}
             {(portfolio?.trades?.length ?? 0) > 0 && (
               <div className="mt-6">
                 <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">Trade History</p>
@@ -829,7 +984,6 @@ export default function Portfolio() {
             </div>
             <p className="text-xs text-muted-foreground mb-4">All-time rankings by total portfolio value</p>
 
-            {/* My rank */}
             <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 mb-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-lg font-extrabold text-primary">#{myRank ?? '?'}</div>
               <div className="flex-1">
@@ -898,11 +1052,11 @@ export default function Portfolio() {
             holding={holdings.find(h => h.assetId === tradeAsset.id)}
             onClose={() => setTradeAsset(null)}
             onTrade={handleTrade}
+            marketStatus={marketStatus}
           />
         )}
       </AnimatePresence>
 
-      {/* Milestone Modal */}
       <AnimatePresence>
         {milestone && (
           <MilestoneModal
@@ -916,7 +1070,6 @@ export default function Portfolio() {
         )}
       </AnimatePresence>
 
-      {/* Section intro */}
       <AnimatePresence>
         {showIntro && <SectionIntro section="portfolio" onDismiss={dismissIntro} />}
       </AnimatePresence>
