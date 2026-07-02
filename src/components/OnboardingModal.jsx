@@ -19,7 +19,7 @@ const GOALS = [
 ];
 
 export default function OnboardingModal() {
-  const alreadyOnboarded = !!localStorage.getItem(STORAGE_KEY);
+  const alreadyOnboarded = !!localStorage.getItem(STORAGE_KEY) && !!localStorage.getItem('wealthquest_player_id');
   const [show, setShow] = useState(() => !alreadyOnboarded);
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
