@@ -4,6 +4,7 @@ import { Zap, TrendingUp, TrendingDown, Clock, Crown, Trophy, Globe, Users, Chev
 import { useUserProgress } from '@/lib/useUserProgress';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
 import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, getPassiveXpToday, claimPassiveXp, SQUAD_MAX, RECRUIT_TIERS, getWeekSeed } from '@/lib/squadData';
+import { fetchXpLeaderboard, fetchCountryTotals, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { toast } from 'sonner';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -185,11 +186,20 @@ export default function League() {
   const [showPicker, setShowPicker]   = useState(false);
   const [squad, setSquad]     = useState(getSquad);
   const [passiveXp, setPassiveXp] = useState(getPassiveXpToday);
+  const [realPlayers, setRealPlayers] = useState([]);
+  const [realCountryTotals, setRealCountryTotals] = useState(null);
   const weekSeed = getWeekSeed();
+  const myPlayerData = getMyPlayerData();
+  const myPlayerId = getMyPlayerId();
 
   useEffect(() => {
     const t = setInterval(() => setTimeLeft(getTimeUntilReset()), 60000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    fetchXpLeaderboard().then(p => { if (p.length) setRealPlayers(p); });
+    fetchCountryTotals().then(t => { if (t) setRealCountryTotals(t); });
   }, []);
 
   // ── Weekly leaderboard ────────────────────────────────────────────────────
@@ -204,9 +214,21 @@ export default function League() {
       return { id: `ghost-${i}`, name: GHOST_NAMES[nameIdx % GHOST_NAMES.length], flag: country.flag, countryName: country.name, xp: Math.max(10, Math.round(baseXp + variance)), isGhost: true };
     });
     const myCountryData = myCountry ? getCountryByCode(myCountry) : null;
-    const me = { id: 'me', name: 'You', flag: myCountryData?.flag ?? '⭐', xp: myXp, isMe: true };
+    const me = { id: 'me', name: myPlayerData?.name ?? 'You', avatar: myPlayerData?.avatar, flag: myCountryData?.flag ?? '⭐', xp: myXp, isMe: true };
+
+    if (realPlayers.length) {
+      const others = realPlayers
+        .filter(p => p.id !== myPlayerId)
+        .map(p => {
+          const c = getCountryByCode(p.country_code);
+          return { id: p.id, name: p.name, avatar: p.avatar, flag: c?.flag ?? '🌍', xp: p.xp ?? 0, real: true };
+        });
+      const padded = others.length < 5 ? [...others, ...ghosts.slice(0, 10 - others.length)] : others;
+      return [...padded, me].sort((a, b) => b.xp - a.xp);
+    }
+
     return [...ghosts, me].sort((a, b) => b.xp - a.xp);
-  }, [myXp, league.name, myCountry]);
+  }, [myXp, league.name, myCountry, realPlayers, myPlayerId, myPlayerData]);
 
   const myRank = leaderboard.findIndex(p => p.isMe) + 1;
   const PROMO = 3;
@@ -216,7 +238,48 @@ export default function League() {
   const promoPct = Math.min(100, myRank <= PROMO ? 100 : (myXp / promoXp) * 100);
 
   // ── Country leaderboard ───────────────────────────────────────────────────
-  const countryBoard = useMemo(() => buildCountryLeaderboard(weekSeed, myPortfolio, myCountry), [weekSeed, myPortfolio, myCountry]);
+  const countryBoard = useMemo(() => {
+    if (realCountryTotals) {
+      // Build from real Supabase data + add ghost volume for empty countries
+      const rand = seededRand(weekSeed * 7919);
+      const countryMap = {};
+      COUNTRIES.forEach(c => { countryMap[c.code] = { ...c, players: 0, totalValue: 0, members: [], hasMe: false, myValue: 0 }; });
+
+      // Real players from Supabase
+      Object.entries(realCountryTotals).forEach(([code, data]) => {
+        if (countryMap[code]) {
+          countryMap[code].players = data.count;
+          countryMap[code].totalValue = data.total;
+        }
+      });
+
+      // My country contribution (using real portfolio key)
+      const myPortfolioVal = (() => {
+        try { const p = JSON.parse(localStorage.getItem('wealthquest_portfolio') ?? 'null'); if (!p) return 10000; const h = p.holdings ?? []; return p.cash + h.reduce((s, hh) => s + hh.avgCost * hh.shares, 0); } catch { return 10000; }
+      })();
+      if (myCountry && countryMap[myCountry]) {
+        countryMap[myCountry].hasMe = true;
+        countryMap[myCountry].myValue = myPortfolioVal;
+      }
+
+      // Pad with ghosts if few real players
+      if (Object.values(realCountryTotals).reduce((s, v) => s + v.count, 0) < 20) {
+        GHOST_NAMES.forEach((name, i) => {
+          const countryIdx = Math.floor(rand() * COUNTRIES.length);
+          const code = COUNTRIES[countryIdx].code;
+          const portfolioValue = Math.round((5000 + rand() * 145000) * 100) / 100;
+          countryMap[code].players++;
+          countryMap[code].totalValue += portfolioValue;
+        });
+      }
+
+      const list = Object.values(countryMap).filter(c => c.players > 0).sort((a, b) => b.totalValue - a.totalValue);
+      const max = list[0]?.totalValue ?? 1;
+      list.forEach(c => { c.barPct = Math.round((c.totalValue / max) * 100); });
+      return list;
+    }
+    return buildCountryLeaderboard(weekSeed, myPortfolio, myCountry);
+  }, [weekSeed, myPortfolio, myCountry, realCountryTotals]);
   const myCountryRank = countryBoard.findIndex(c => c.hasMe) + 1;
 
   // ── Squad ─────────────────────────────────────────────────────────────────
@@ -391,12 +454,16 @@ export default function League() {
                       {rank <= 3 ? <span className="text-lg">{MEDALS[rank - 1]}</span>
                         : <span className={`text-sm font-extrabold ${isMe ? 'text-primary' : 'text-muted-foreground'}`}>{rank}</span>}
                     </div>
-                    <span className="text-base shrink-0">{player.flag}</span>
+                    <span className="text-base shrink-0">{player.avatar ?? player.flag}</span>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-extrabold truncate ${isMe ? 'text-primary' : 'text-foreground'}`}>
-                        {isMe ? 'You ← ' : ''}{player.name}
-                      </p>
-                      {player.countryName && <p className="text-[10px] text-muted-foreground">{player.countryName}</p>}
+                      <div className="flex items-center gap-1.5">
+                        <p className={`text-sm font-extrabold truncate ${isMe ? 'text-primary' : 'text-foreground'}`}>
+                          {isMe ? 'You ← ' : ''}{player.name}
+                        </p>
+                        {player.real && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 font-bold px-1 py-0.5 rounded-full">LIVE</span>}
+                      </div>
+                      {!player.avatar && player.countryName && <p className="text-[10px] text-muted-foreground">{player.countryName}</p>}
+                      {player.avatar && <span className="text-[10px] text-muted-foreground">{player.flag}</span>}
                     </div>
                     <div className={`flex items-center gap-1 text-sm font-extrabold ${isMe ? 'text-primary' : 'text-muted-foreground'}`}>
                       <Zap className="w-3.5 h-3.5" />{player.xp}

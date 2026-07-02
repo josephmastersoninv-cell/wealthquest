@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { COUNTRIES, setMyCountry } from '@/lib/countryData';
+import { registerPlayer, getMyPlayerId } from '@/lib/playerSync';
+import { isConfigured } from '@/lib/supabase';
 
 const STORAGE_KEY = 'wealthquest_onboarded';
 const NAME_KEY = 'wealthquest_display_name';
@@ -17,36 +19,53 @@ const GOALS = [
 ];
 
 export default function OnboardingModal() {
-  const [show, setShow] = useState(() => !localStorage.getItem(STORAGE_KEY));
+  const alreadyOnboarded = !!localStorage.getItem(STORAGE_KEY);
+  const [show, setShow] = useState(() => !alreadyOnboarded);
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('🦁');
   const [goal, setGoal] = useState(20);
   const [country, setCountry] = useState(null);
   const [search, setSearch] = useState('');
+  const [registering, setRegistering] = useState(false);
 
   const filteredCountries = COUNTRIES.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  function finish() {
+  async function finish() {
+    setRegistering(true);
     localStorage.setItem(STORAGE_KEY, '1');
     if (name.trim()) localStorage.setItem(NAME_KEY, name.trim());
     localStorage.setItem(AVATAR_KEY, avatar);
     localStorage.setItem(GOAL_KEY, String(goal));
     if (country) setMyCountry(country);
+
+    if (!getMyPlayerId()) {
+      await registerPlayer({
+        name: name.trim() || 'Investor',
+        avatar,
+        countryCode: country ?? 'US',
+      });
+    }
+
+    setRegistering(false);
     setShow(false);
   }
 
-  const canNext = step === 0 ? name.trim().length > 0 : true;
+  // country step requires selection to proceed
+  const canNext =
+    step === 0 ? name.trim().length > 0 :
+    step === 2 ? country !== null :
+    true;
 
   const steps = [
     // Step 0 — Name + avatar
     <motion.div key="step0" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-5">
       <div className="text-center">
         <div className="text-6xl mb-3">{avatar}</div>
-        <h2 className="text-2xl font-black text-foreground">Welcome to WealthQuest!</h2>
-        <p className="text-sm text-muted-foreground mt-1">Let's set up your profile</p>
+        <h2 className="text-2xl font-black text-foreground">Join WealthQuest</h2>
+        <p className="text-sm text-muted-foreground mt-1">Compete with players worldwide</p>
       </div>
       <div>
         <label className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Your name</label>
@@ -94,7 +113,7 @@ export default function OnboardingModal() {
       </div>
     </motion.div>,
 
-    // Step 2 — Country
+    // Step 2 — Country (required for competition)
     <motion.div key="step2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-4">
       <div className="text-center">
         <div className="text-5xl mb-3">🌍</div>
@@ -124,11 +143,11 @@ export default function OnboardingModal() {
       )}
     </motion.div>,
 
-    // Step 3 — Why
+    // Step 3 — Ready
     <motion.div key="step3" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-5">
       <div className="text-center">
         <div className="text-5xl mb-3">🚀</div>
-        <h2 className="text-2xl font-black text-foreground">You're all set{name ? `, ${name}` : ''}!</h2>
+        <h2 className="text-2xl font-black text-foreground">You're in{name ? `, ${name}` : ''}!</h2>
         <p className="text-sm text-muted-foreground mt-1">Here's what awaits you</p>
       </div>
       <div className="space-y-3">
@@ -154,7 +173,7 @@ export default function OnboardingModal() {
     <AnimatePresence>
       {show && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-6">
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-4 pb-6">
           <motion.div initial={{ y: 120, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 120, opacity: 0 }}
             className="w-full max-w-sm bg-card rounded-3xl p-6 shadow-2xl border border-border max-h-[90vh] overflow-y-auto">
 
@@ -172,11 +191,11 @@ export default function OnboardingModal() {
             <div className="mt-6 space-y-2">
               <button
                 onClick={() => step < steps.length - 1 ? setStep(s => s + 1) : finish()}
-                disabled={!canNext}
-                className={`w-full h-14 rounded-2xl font-extrabold text-base transition-all ${canNext ? 'bg-primary text-white active:scale-95' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}>
-                {step < steps.length - 1 ? 'Continue →' : "Let's Go! 🚀"}
+                disabled={!canNext || registering}
+                className={`w-full h-14 rounded-2xl font-extrabold text-base transition-all ${canNext && !registering ? 'bg-primary text-white active:scale-95' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}>
+                {registering ? 'Creating profile…' : step < steps.length - 1 ? 'Continue →' : "Let's Go! 🚀"}
               </button>
-              {step < steps.length - 1 && (
+              {step < steps.length - 1 && step !== 2 && (
                 <button onClick={finish} className="w-full text-center text-xs text-muted-foreground py-2">
                   Skip setup
                 </button>

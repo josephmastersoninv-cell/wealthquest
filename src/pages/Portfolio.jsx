@@ -8,6 +8,8 @@ import { recordPortfolioValue, getPortfolioHistory } from '@/lib/portfolioHistor
 import { calcPortfolioScore, getGradeColor } from '@/lib/portfolioScore';
 import MilestoneModal, { checkMilestone } from '@/components/MilestoneModal';
 import { toast } from 'sonner';
+import { fetchLeaderboard, syncPortfolioValue, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
+import { getCountryByCode } from '@/lib/countryData';
 
 const PORTFOLIO_KEY = 'wealthquest_portfolio';
 const WATCHLIST_KEY = 'wealthquest_watchlist';
@@ -327,6 +329,7 @@ export default function Portfolio() {
   const [sortByMovers, setSortByMovers] = useState(false);
   const [expandedNews, setExpandedNews] = useState(null);
   const [milestone, setMilestone] = useState(null);
+  const [realPlayers, setRealPlayers] = useState([]);
 
   const lessons = progress?.completed_lessons?.length ?? 0;
   const unlocked = lessons >= UNLOCK_LESSONS;
@@ -361,13 +364,19 @@ export default function Portfolio() {
     return cash + inv;
   }, [holdings, prices, cash]);
 
-  // Record history after prices load
+  // Record history + sync to Supabase after prices load
   useEffect(() => {
     if (!loading && totalValue > 0) {
       recordPortfolioValue(totalValue);
       setHistory(getPortfolioHistory());
+      syncPortfolioValue(totalValue, progress?.xp ?? 0);
     }
   }, [loading]);
+
+  // Fetch real leaderboard
+  useEffect(() => {
+    fetchLeaderboard().then(players => { if (players.length) setRealPlayers(players); });
+  }, []);
 
   const totalGain = totalValue - STARTING_CASH;
   const totalGainPct = (totalGain / STARTING_CASH) * 100;
@@ -378,7 +387,29 @@ export default function Portfolio() {
     prices, history, startingCash: STARTING_CASH,
   }), [holdings, prices, history]);
 
-  const leaderboard = useMemo(() => Object.keys(prices).length ? generateLeaderboard(prices) : [], [prices]);
+  const myPlayerId = getMyPlayerId();
+  const myPlayerData = getMyPlayerData();
+
+  const leaderboard = useMemo(() => {
+    const ghosts = Object.keys(prices).length ? generateLeaderboard(prices) : [];
+    if (!realPlayers.length) return ghosts;
+    // merge real players (excluding me — I'll be inserted at real portfolio value)
+    const others = realPlayers
+      .filter(p => p.id !== myPlayerId)
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        value: Number(p.portfolio_value),
+        returnPct: ((Number(p.portfolio_value) - 10000) / 10000) * 100,
+        topHolding: null,
+        real: true,
+        countryCode: p.country_code,
+      }));
+    // pad with enough ghosts so leaderboard isn't empty
+    const padded = others.length < 5 ? [...others, ...ghosts.slice(0, 10 - others.length)] : others;
+    return padded.sort((a, b) => b.value - a.value);
+  }, [realPlayers, prices, myPlayerId]);
 
   const myRank = useMemo(() => {
     if (!leaderboard.length) return null;
@@ -417,12 +448,12 @@ export default function Portfolio() {
     savePortfolio(p);
     setTradeAsset(null);
 
-    // Check portfolio milestones after trade settles
     setTimeout(() => {
       const inv = p.holdings.reduce((sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0);
       const newTotal = p.cash + inv;
       const hit = checkMilestone(newTotal);
       if (hit) setMilestone(hit);
+      syncPortfolioValue(newTotal, progress?.xp ?? 0);
     }, 400);
   }
 
@@ -802,7 +833,11 @@ export default function Portfolio() {
             <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 mb-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-lg font-extrabold text-primary">#{myRank ?? '?'}</div>
               <div className="flex-1">
-                <p className="font-extrabold text-foreground">You</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-extrabold text-foreground">{myPlayerData?.name ?? 'You'}</p>
+                  {myPlayerData?.avatar && <span>{myPlayerData.avatar}</span>}
+                  {(() => { const c = getCountryByCode(myPlayerData?.country_code); return c ? <span className="text-sm">{c.flag}</span> : null; })()}
+                </div>
                 <p className="text-xs text-muted-foreground">Portfolio: ${totalValue.toFixed(2)}</p>
               </div>
               <div className={`text-sm font-extrabold ${totalGain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -812,32 +847,36 @@ export default function Portfolio() {
 
             <div className="space-y-2">
               {loading ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-2xl animate-pulse" />) : (
-                leaderboard.map((player, i) => (
-                  <div key={player.id} className="flex items-center gap-3 bg-card border border-border rounded-2xl px-4 py-3">
-                    <div className="w-7 text-center shrink-0">
-                      {i === 0 ? <Crown className="w-5 h-5 text-amber-400 mx-auto" />
-                        : i === 1 ? <span className="text-sm">🥈</span>
-                        : i === 2 ? <span className="text-sm">🥉</span>
-                        : <span className="text-xs font-extrabold text-muted-foreground">#{i + 1}</span>}
-                    </div>
-                    <span className="text-xl shrink-0">{player.avatar}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-extrabold text-foreground">{player.name}</p>
-                        <span className="text-sm">{player.badge}</span>
+                leaderboard.map((player, i) => {
+                  const country = player.real ? getCountryByCode(player.countryCode) : null;
+                  return (
+                    <div key={player.id} className="flex items-center gap-3 bg-card border border-border rounded-2xl px-4 py-3">
+                      <div className="w-7 text-center shrink-0">
+                        {i === 0 ? <Crown className="w-5 h-5 text-amber-400 mx-auto" />
+                          : i === 1 ? <span className="text-sm">🥈</span>
+                          : i === 2 ? <span className="text-sm">🥉</span>
+                          : <span className="text-xs font-extrabold text-muted-foreground">#{i + 1}</span>}
                       </div>
-                      {player.topHolding && (
-                        <p className="text-xs text-muted-foreground">Top: {player.topHolding.emoji} {player.topHolding.symbol}</p>
-                      )}
+                      <span className="text-xl shrink-0">{player.avatar}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-extrabold text-foreground">{player.name}</p>
+                          {player.real && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded-full">LIVE</span>}
+                          {country && <span className="text-sm">{country.flag}</span>}
+                        </div>
+                        {!player.real && player.topHolding && (
+                          <p className="text-xs text-muted-foreground">Top: {player.topHolding.emoji} {player.topHolding.symbol}</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-extrabold text-foreground">${player.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                        <p className={`text-xs font-bold ${player.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {player.returnPct >= 0 ? '+' : ''}{player.returnPct.toFixed(1)}%
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-extrabold text-foreground">${player.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                      <p className={`text-xs font-bold ${player.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {player.returnPct >= 0 ? '+' : ''}{player.returnPct.toFixed(1)}%
-                      </p>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
