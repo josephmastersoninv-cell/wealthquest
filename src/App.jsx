@@ -18,6 +18,7 @@ import BossBattle from '@/pages/BossBattle';
 import Pro from '@/pages/Pro';
 import Calculators from '@/pages/Calculators';
 import GlossarySearch from '@/pages/GlossarySearch';
+import NewsBriefing from '@/pages/NewsBriefing';
 import BottomNav from '@/components/BottomNav';
 import OnboardingModal from '@/components/OnboardingModal';
 
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/pro" element={<Pro />} />
         <Route path="/calculators" element={<Calculators />} />
         <Route path="/glossary" element={<GlossarySearch />} />
+        <Route path="/news" element={<NewsBriefing />} />
       </Routes>
       {showNav && <BottomNav />}
       <OnboardingModal />

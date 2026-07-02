@@ -1,11 +1,12 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, TrendingUp, TrendingDown, Clock, Crown, Globe, X, CheckCircle2, XCircle } from 'lucide-react';
+import { Zap, TrendingUp, TrendingDown, Clock, Crown, Globe, X, CheckCircle2, XCircle, ChevronDown } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
 import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, getPassiveXpToday, claimPassiveXp, SQUAD_MAX, RECRUIT_TIERS, getWeekSeed } from '@/lib/squadData';
 import { fetchXpLeaderboard, fetchCountryTotals, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getStockResult, getTimeUntilReveal } from '@/lib/arenaData';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -175,7 +176,9 @@ function RecruitCard({ player, inSquad, squadFull, onRecruit, onDismiss, coins }
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function League() {
+  const navigate = useNavigate();
   const { progress, updateProgress } = useUserProgress();
+  const briefingReadToday = localStorage.getItem('wealthquest_briefing_read') === new Date().toISOString().slice(0, 10);
   const myXp        = progress?.xp ?? 0;
   const myCoins     = progress?.coins ?? 0;
   const myPortfolio = progress?.portfolio_balance ?? 10000;
@@ -478,10 +481,38 @@ export default function League() {
             className="px-4 pt-5 pb-6 space-y-4">
 
             {/* Hero headline */}
-            <div>
-              <h2 className="text-xl font-black text-foreground">Market Clash ⚡</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Pick 5 stocks UP or DOWN · Results in 1 hour · Affects your portfolio & rank</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-black text-foreground">Market Clash ⚡</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Pick 5 stocks UP or DOWN · Results in 1 hour · Affects your portfolio & rank</p>
+              </div>
+              <button
+                onClick={() => navigate('/news?from=arena')}
+                className={`shrink-0 flex items-center gap-1.5 text-xs font-extrabold px-3 py-2 rounded-xl transition-all active:scale-95 ${
+                  briefingReadToday
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-primary text-primary-foreground shadow-md shadow-primary/20 animate-pulse'
+                }`}
+              >
+                {briefingReadToday ? '📰 Briefing read ✓' : '📰 Read Briefing'}
+              </button>
             </div>
+
+            {/* Briefing nudge — shown if not yet read today and no picks submitted */}
+            {!briefingReadToday && !submitted && !results && (
+              <motion.button
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                onClick={() => navigate('/news?from=arena')}
+                className="w-full bg-gradient-to-r from-blue-900 to-violet-900 border border-blue-500/30 rounded-2xl p-4 flex items-center gap-4 active:scale-[0.98] transition-all"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-2xl shrink-0">📡</div>
+                <div className="flex-1 text-left">
+                  <p className="font-extrabold text-white text-sm">Read Today's Briefing First</p>
+                  <p className="text-xs text-white/60 mt-0.5">Live news, central bank reports & rumours — then make informed picks</p>
+                </div>
+                <ChevronDown className="w-4 h-4 text-white/40 -rotate-90 shrink-0" />
+              </motion.button>
+            )}
 
             {/* ── Results unclaimed ── */}
             {results && !results.claimed && (
