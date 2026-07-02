@@ -206,6 +206,21 @@ export default function Learn() {
           })()}
         </div>
 
+        {/* Streak reminder — shown if streak > 1 and not yet active today */}
+        {streak > 1 && !dailyDone && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            className="mx-4 mt-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 flex items-center gap-3">
+            <span className="text-2xl">🔥</span>
+            <div className="flex-1">
+              <p className="text-sm font-extrabold text-amber-400">{streak}-day streak at risk!</p>
+              <p className="text-xs text-muted-foreground">Complete a lesson or challenge to keep it alive.</p>
+            </div>
+            <Link to="/daily" className="bg-amber-500 text-white text-xs font-extrabold px-3 py-2 rounded-xl active:scale-95 shrink-0">
+              Go →
+            </Link>
+          </motion.div>
+        )}
+
         {/* Weekly recap */}
         <div className="pt-3">
           <WeeklyRecap progress={progress} />

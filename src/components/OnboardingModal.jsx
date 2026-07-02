@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Check } from 'lucide-react';
+import { COUNTRIES, setMyCountry } from '@/lib/countryData';
 
 const STORAGE_KEY = 'wealthquest_onboarded';
 const NAME_KEY = 'wealthquest_display_name';
@@ -20,12 +22,19 @@ export default function OnboardingModal() {
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('🦁');
   const [goal, setGoal] = useState(20);
+  const [country, setCountry] = useState(null);
+  const [search, setSearch] = useState('');
+
+  const filteredCountries = COUNTRIES.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   function finish() {
     localStorage.setItem(STORAGE_KEY, '1');
     if (name.trim()) localStorage.setItem(NAME_KEY, name.trim());
     localStorage.setItem(AVATAR_KEY, avatar);
     localStorage.setItem(GOAL_KEY, String(goal));
+    if (country) setMyCountry(country);
     setShow(false);
   }
 
@@ -85,11 +94,41 @@ export default function OnboardingModal() {
       </div>
     </motion.div>,
 
-    // Step 2 — Why
-    <motion.div key="step2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-5">
+    // Step 2 — Country
+    <motion.div key="step2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-4">
+      <div className="text-center">
+        <div className="text-5xl mb-3">🌍</div>
+        <h2 className="text-2xl font-black text-foreground">Where are you from?</h2>
+        <p className="text-sm text-muted-foreground mt-1">Your portfolio counts toward your country's ranking</p>
+      </div>
+      <input
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Search countries..."
+        className="w-full h-10 px-4 rounded-2xl border border-border bg-muted text-foreground text-sm outline-none focus:border-primary transition-colors"
+      />
+      <div className="max-h-48 overflow-y-auto rounded-2xl border border-border divide-y divide-border/50">
+        {filteredCountries.map(c => (
+          <button key={c.code} onClick={() => setCountry(c.code)}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${country === c.code ? 'bg-primary/10' : 'hover:bg-muted/50'}`}>
+            <span className="text-lg">{c.flag}</span>
+            <span className={`text-sm font-bold flex-1 ${country === c.code ? 'text-primary' : 'text-foreground'}`}>{c.name}</span>
+            {country === c.code && <Check className="w-4 h-4 text-primary" />}
+          </button>
+        ))}
+      </div>
+      {country && (
+        <p className="text-center text-xs font-bold text-primary">
+          Representing {COUNTRIES.find(c => c.code === country)?.flag} {COUNTRIES.find(c => c.code === country)?.name}
+        </p>
+      )}
+    </motion.div>,
+
+    // Step 3 — Why
+    <motion.div key="step3" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-5">
       <div className="text-center">
         <div className="text-5xl mb-3">🚀</div>
-        <h2 className="text-2xl font-black text-foreground">You're all set, {name}!</h2>
+        <h2 className="text-2xl font-black text-foreground">You're all set{name ? `, ${name}` : ''}!</h2>
         <p className="text-sm text-muted-foreground mt-1">Here's what awaits you</p>
       </div>
       <div className="space-y-3">

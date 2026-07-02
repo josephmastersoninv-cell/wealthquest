@@ -99,14 +99,24 @@ export default function LevelUpModal({ progress }) {
           )}
         </AnimatePresence>
 
-        {/* Tap to continue */}
+        {/* Buttons */}
         <AnimatePresence>
           {phase === 'unlock' && (
-            <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              onClick={dismiss}
-              className="bg-gradient-to-r from-amber-400 to-orange-500 text-white font-extrabold py-4 px-10 rounded-2xl text-base shadow-2xl active:scale-95 transition-all">
-              Keep Going! 🚀
-            </motion.button>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
+              <button onClick={dismiss}
+                className="bg-gradient-to-r from-amber-400 to-orange-500 text-white font-extrabold py-4 px-10 rounded-2xl text-base shadow-2xl active:scale-95 transition-all">
+                Keep Going! 🚀
+              </button>
+              <button
+                onClick={() => {
+                  const text = `🏆 I just reached Level ${newLevel.level} "${newLevel.title}" on WealthQuest! Can you beat me? 📈\nhttps://monelingo.vercel.app`;
+                  if (navigator.share) navigator.share({ text });
+                  else navigator.clipboard?.writeText(text);
+                }}
+                className="text-white/50 text-sm font-bold active:scale-95 hover:text-white/80">
+                Share this moment 🔗
+              </button>
+            </motion.div>
           )}
         </AnimatePresence>
 
