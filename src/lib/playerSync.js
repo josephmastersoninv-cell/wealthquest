@@ -12,24 +12,26 @@ export function getMyPlayerData() {
 }
 
 export async function registerPlayer({ name, avatar, countryCode }) {
-  if (!isConfigured) {
-    const id = Math.random().toString(36).slice(2);
-    const data = { id, name, avatar, country_code: countryCode, portfolio_value: 10000, xp: 0 };
-    localStorage.setItem(PLAYER_KEY, id);
-    localStorage.setItem(PLAYER_DATA_KEY, JSON.stringify(data));
-    return data;
-  }
+  // Save a local fallback immediately so sign-up never loops on Supabase failure
+  const localId = 'local_' + Math.random().toString(36).slice(2);
+  const localData = { id: localId, name, avatar, country_code: countryCode, portfolio_value: 10000, xp: 0 };
+  localStorage.setItem(PLAYER_KEY, localId);
+  localStorage.setItem(PLAYER_DATA_KEY, JSON.stringify(localData));
+
+  if (!isConfigured) return localData;
+
   try {
     const [player] = await sbFetch('/players', {
       method: 'POST',
       body: JSON.stringify({ name, avatar, country_code: countryCode, portfolio_value: 10000, xp: 0 }),
     });
+    // Replace local ID with real Supabase UUID
     localStorage.setItem(PLAYER_KEY, player.id);
     localStorage.setItem(PLAYER_DATA_KEY, JSON.stringify(player));
     return player;
   } catch (e) {
-    console.error('registerPlayer:', e);
-    return null;
+    console.error('registerPlayer failed, keeping local fallback:', e);
+    return localData;
   }
 }
 
