@@ -26,10 +26,19 @@ const DEFAULT_PROGRESS = {
   lesson_stars: {},
 };
 
+// Read synchronously from localStorage so pages never start with null progress
+function readInitialProgress() {
+  try {
+    const raw = localStorage.getItem('wealthquest_user_progress');
+    const records = raw ? JSON.parse(raw) : [];
+    return records[0] ?? null;
+  } catch { return null; }
+}
+
 export function useUserProgress() {
-  const [progress, setProgress] = useState(null);
-  const [progressId, setProgressId] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState(readInitialProgress);
+  const [progressId, setProgressId] = useState(() => readInitialProgress()?.id ?? null);
+  const [loading, setLoading] = useState(false);
   const [newAchievements, setNewAchievements] = useState([]);
   const prevProgress = useRef(null);
 

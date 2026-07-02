@@ -21,9 +21,9 @@ function makeId() {
   return `local_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// Simulates network latency so loading states behave like the real thing.
-function delay(value, ms = 120) {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+// No artificial delay — data is local, reads should be instant.
+function delay(value) {
+  return Promise.resolve(value);
 }
 
 export const base44 = {
