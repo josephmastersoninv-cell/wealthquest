@@ -384,6 +384,28 @@ export default function League() {
         </div>
       </div>
 
+      {/* ── "Someone passed you" alert ── */}
+      {(() => {
+        const prevRankKey = 'wealthquest_prev_league_rank';
+        const prevRank = parseInt(localStorage.getItem(prevRankKey) ?? '0', 10);
+        if (prevRank && myRank > prevRank) {
+          return (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+              className="mx-4 mt-3 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3 flex items-center gap-3">
+              <span className="text-xl">😤</span>
+              <div className="flex-1">
+                <p className="text-sm font-extrabold text-rose-400">You dropped to #{myRank}!</p>
+                <p className="text-xs text-muted-foreground">Someone just passed you. Fight back — earn XP now.</p>
+              </div>
+              <button onClick={() => { localStorage.setItem(prevRankKey, String(myRank)); }}
+                className="text-xs font-bold text-muted-foreground">✕</button>
+            </motion.div>
+          );
+        }
+        if (myRank !== prevRank) localStorage.setItem(prevRankKey, String(myRank));
+        return null;
+      })()}
+
       {/* ── Tabs ── */}
       <div className="flex border-b border-border bg-card">
         {tabs.map(t => (

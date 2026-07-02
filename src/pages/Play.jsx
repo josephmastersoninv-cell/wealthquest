@@ -130,22 +130,29 @@ export default function Play() {
             </Link>
 
             {/* Practice Quiz */}
-            <Link to={hearts === 0 ? '#' : '/practice'} className={hearts === 0 ? 'pointer-events-none' : ''}>
-              <div className={`bg-card border border-border rounded-2xl p-4 flex items-center gap-4 transition-all ${hearts > 0 ? 'active:scale-[0.98]' : 'opacity-50'}`}>
-                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 flex items-center justify-center text-2xl shrink-0">⚔️</div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-extrabold text-foreground text-sm">Practice Quiz</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hearts > 0
-                      ? `${hearts}❤️ remaining · Combo XP bonus`
-                      : 'Out of hearts — refill in Shop'}
-                  </p>
+            {hearts === 0 ? (
+              <Link to="/shop">
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-center gap-4 active:scale-[0.98] transition-all">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-500/20 flex items-center justify-center text-2xl shrink-0">💔</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-extrabold text-rose-400 text-sm">No hearts left!</p>
+                    <p className="text-xs text-muted-foreground">Wrong answers cost hearts. Tap to refill in the Shop.</p>
+                  </div>
+                  <div className="bg-rose-500 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl shrink-0">Refill</div>
                 </div>
-                {hearts === 0
-                  ? <Lock className="w-4 h-4 text-muted-foreground shrink-0" />
-                  : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
-              </div>
-            </Link>
+              </Link>
+            ) : (
+              <Link to="/practice">
+                <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4 active:scale-[0.98] transition-all">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-500/15 flex items-center justify-center text-2xl shrink-0">⚔️</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-extrabold text-foreground text-sm">Practice Quiz</p>
+                    <p className="text-xs text-muted-foreground">{hearts}❤️ remaining · Wrong answers cost 1 heart · Combo XP bonus</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                </div>
+              </Link>
+            )}
           </div>
         </div>
 

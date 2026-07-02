@@ -5,12 +5,12 @@ const KEY_CLAIMED = 'wealthquest_login_claimed_today';
 
 export const LOGIN_REWARDS = [
   { day: 1, xp: 20,  coins: 10,  bonus: null,                   label: 'Day 1' },
-  { day: 2, xp: 30,  coins: 20,  bonus: null,                   label: 'Day 2' },
-  { day: 3, xp: 40,  coins: 30,  bonus: '❤️ Heart Refill',      label: 'Day 3' },
-  { day: 4, xp: 50,  coins: 40,  bonus: null,                   label: 'Day 4' },
-  { day: 5, xp: 60,  coins: 50,  bonus: '⚡ XP Boost (30min)',  label: 'Day 5' },
-  { day: 6, xp: 75,  coins: 60,  bonus: null,                   label: 'Day 6' },
-  { day: 7, xp: 100, coins: 100, bonus: '🛡️ Streak Shield',     label: 'Day 7', special: true },
+  { day: 2, xp: 35,  coins: 25,  bonus: null,                   label: 'Day 2' },
+  { day: 3, xp: 50,  coins: 40,  bonus: '❤️ Heart Refill',      label: 'Day 3' },
+  { day: 4, xp: 65,  coins: 60,  bonus: null,                   label: 'Day 4' },
+  { day: 5, xp: 80,  coins: 80,  bonus: '⚡ XP Boost (30min)',  label: 'Day 5' },
+  { day: 6, xp: 100, coins: 100, bonus: '🛡️ Streak Shield',     label: 'Day 6' },
+  { day: 7, xp: 200, coins: 250, bonus: '👑 Legendary Chest',   label: 'Day 7', special: true },
 ];
 
 function todayStr() {
