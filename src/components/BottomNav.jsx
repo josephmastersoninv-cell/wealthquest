@@ -3,12 +3,12 @@ import { NavLink } from 'react-router-dom';
 import { BookOpen, Swords, TrendingUp, Trophy, User, GalleryVerticalEnd } from 'lucide-react';
 
 const TABS = [
-  { to: '/',             icon: BookOpen,          label: 'Learn'     },
-  { to: '/flashcards',   icon: GalleryVerticalEnd, label: 'Cards'     },
-  { to: '/play',         icon: Swords,            label: 'Play'      },
-  { to: '/portfolio', icon: TrendingUp, label: 'Portfolio' },
-  { to: '/league',    icon: Trophy,     label: 'League'    },
-  { to: '/profile',   icon: User,       label: 'Profile'   },
+  { to: '/',           icon: BookOpen,           label: 'Learn'     },
+  { to: '/flashcards', icon: GalleryVerticalEnd, label: 'Cards'     },
+  { to: '/portfolio',  icon: TrendingUp,         label: 'Portfolio' },
+  { to: '/league',     icon: Trophy,             label: 'League'    },
+  { to: '/play',       icon: Swords,             label: 'Play'      },
+  { to: '/profile',    icon: User,               label: 'Profile'   },
 ];
 
 export default function BottomNav() {
