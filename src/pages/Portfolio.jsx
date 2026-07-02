@@ -723,17 +723,25 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, m
 
         {/* ─ done panel ─ */}
         {panel === 'done' && (
-          <div className="flex flex-col items-center gap-2 py-2">
+          <div className="flex flex-col items-center gap-3 py-1">
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 380, damping: 22 }}>
-              <CheckCircle2 className="w-12 h-12" style={{ color: mc.bg }} />
+              <CheckCircle2 className="w-10 h-10" style={{ color: mc.bg }} />
             </motion.div>
-            <p className="text-lg font-extrabold text-white">Order Filled</p>
-            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              {mode === 'buy'   && `Bought ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)}`}
-              {mode === 'sell'  && `Sold ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)}`}
-              {mode === 'short' && `Shorted ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)} — profit if price falls`}
-              {mode === 'cover' && `Covered ${shares.toFixed(4)} ${asset.symbol} short`}
-            </p>
+            <div className="text-center">
+              <p className="text-base font-extrabold text-white">Order Filled</p>
+              <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                {mode === 'buy'   && `Bought ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)}`}
+                {mode === 'sell'  && `Sold ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)}`}
+                {mode === 'short' && `Shorted ${shares.toFixed(4)} ${asset.symbol} @ $${fmtP(price)}`}
+                {mode === 'cover' && `Covered ${shares.toFixed(4)} ${asset.symbol} short`}
+              </p>
+            </div>
+            <button
+              onClick={() => { setPanel('chart'); setDollars(''); }}
+              className="w-full py-3.5 rounded-2xl font-extrabold text-white text-sm active:scale-[0.98] transition-all"
+              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.12)' }}>
+              ← Back to Chart
+            </button>
           </div>
         )}
       </div>
@@ -1305,7 +1313,6 @@ export default function Portfolio() {
 
     p.trades.push({ type: mode, assetId: asset.id, shares, price, ts: Date.now() });
     savePortfolio(p);
-    setTradeAsset(null);
 
     setTimeout(() => {
       const inv = p.holdings.reduce((sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0);
