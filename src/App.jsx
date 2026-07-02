@@ -19,8 +19,9 @@ import Pro from '@/pages/Pro';
 import Calculators from '@/pages/Calculators';
 import GlossarySearch from '@/pages/GlossarySearch';
 import BottomNav from '@/components/BottomNav';
+import OnboardingModal from '@/components/OnboardingModal';
 
-const NAV_ROUTES = ['/', '/play', '/portfolio', '/league', '/profile'];
+const NAV_ROUTES = ['/', '/play', '/portfolio', '/league', '/profile', '/flashcards'];
 
 export default function App() {
   const location = useLocation();
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/glossary" element={<GlossarySearch />} />
       </Routes>
       {showNav && <BottomNav />}
+      <OnboardingModal />
     </ThemeProvider>
   );
 }
