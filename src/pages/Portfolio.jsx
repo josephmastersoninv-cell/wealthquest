@@ -93,35 +93,123 @@ function Sparkline({ points, positive, width = 64, height = 28 }) {
   );
 }
 
-// ─── Portfolio history chart ──────────────────────────────────────────────────
-function PortfolioChart({ history, startingCash }) {
-  if (history.length < 2) {
+// ─── Portfolio live chart ─────────────────────────────────────────────────────
+function PortfolioChart({ history, startingCash, livePoints }) {
+  // Prefer live in-session points; fall back to persisted history
+  const values = livePoints?.length >= 2
+    ? livePoints
+    : history?.length >= 2 ? history.map(h => h.value) : null;
+
+  if (!values) {
     return (
-      <div className="flex flex-col items-center justify-center h-28 text-muted-foreground text-xs gap-1">
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-1">
         <TrendingUp className="w-6 h-6 opacity-30" />
         <span>Chart grows as you invest</span>
       </div>
     );
   }
-  const values = history.map(h => h.value);
-  const min = Math.min(startingCash * 0.9, ...values);
-  const max = Math.max(startingCash * 1.1, ...values);
+  const latest  = values.at(-1);
+  const positive = latest >= startingCash;
+  const color   = positive ? '#10b981' : '#f43f5e';
+  const min = Math.min(startingCash * 0.95, ...values);
+  const max = Math.max(startingCash * 1.05, ...values);
   const range = max - min || 1;
-  const w = 340, h = 100;
-  const step = w / (values.length - 1);
-  const py = v => h - 4 - ((v - min) / range) * (h - 8);
+  const w = 340, h = 110;
+  const step = w / Math.max(values.length - 1, 1);
+  const py = v => h - 4 - ((v - min) / range) * (h - 12);
   const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${i * step} ${py(v)}`).join(' ');
-  const positive = values.at(-1) >= startingCash;
-  const color = positive ? '#10b981' : '#f43f5e';
   const fillD = `${d} L ${(values.length - 1) * step} ${h} L 0 ${h} Z`;
+  const baseline = py(startingCash);
   return (
-    <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
-      <line x1="0" y1={py(startingCash)} x2={w} y2={py(startingCash)}
-        stroke="currentColor" strokeWidth="0.5" strokeDasharray="4 3" className="text-border" />
-      <path d={fillD} fill={color} fillOpacity="0.12" />
+    <svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+      <line x1="0" y1={baseline} x2={w} y2={baseline}
+        stroke="currentColor" strokeWidth="0.6" strokeDasharray="4 3" className="text-border" />
+      <defs>
+        <linearGradient id="pf-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <path d={fillD} fill="url(#pf-grad)" />
       <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={(values.length - 1) * step} cy={py(values.at(-1))} r="3.5" fill={color} />
+      <circle cx={(values.length - 1) * step} cy={py(latest)} r="4" fill={color} />
+      <circle cx={(values.length - 1) * step} cy={py(latest)} r="7" fill={color} fillOpacity="0.2" />
     </svg>
+  );
+}
+
+// ─── Live 1-min stock chart (inside trade modal) ──────────────────────────────
+function LivePriceChart({ price, asset }) {
+  const [pts, setPts] = useState([price]);
+  const openRef = useRef(price);
+  const ipo = IPO_DATA[asset.id];
+
+  useEffect(() => {
+    setPts(prev => {
+      const next = [...prev.slice(-89), price];
+      return next;
+    });
+  }, [price]);
+
+  const sessionChange = ((price - openRef.current) / openRef.current) * 100;
+  const positive = sessionChange >= 0;
+  const color = positive ? '#10b981' : '#f43f5e';
+  const high = Math.max(...pts);
+  const low  = Math.min(...pts);
+  const allTimeReturn = ipo ? ((price - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
+
+  const min = low * 0.9995;
+  const max = high * 1.0005;
+  const range = max - min || 1;
+  const w = 300, h = 72;
+  const step = w / Math.max(pts.length - 1, 1);
+  const py = v => h - 2 - ((v - min) / range) * (h - 4);
+  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${i * step} ${py(v)}`).join(' ');
+  const fillD = `${d} L ${(pts.length - 1) * step} ${h} L 0 ${h} Z`;
+  const cx = (pts.length - 1) * step;
+  const cy = py(price);
+
+  return (
+    <div className="bg-muted/40 rounded-2xl p-3 mb-4 border border-border/50">
+      {/* Header row */}
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${positive ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${positive ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+            </span>
+            <p className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest">Live · 1-min</p>
+          </div>
+          <p className="text-lg font-extrabold text-foreground">
+            ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: price >= 10 ? 2 : 4 })}
+          </p>
+          <p className={`text-xs font-extrabold ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {positive ? '+' : ''}{sessionChange.toFixed(3)}% this session
+          </p>
+        </div>
+        <div className="text-right text-[10px] text-muted-foreground space-y-0.5">
+          <p>H <span className="text-foreground font-bold">${high.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+          <p>L <span className="text-foreground font-bold">${low.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+          {allTimeReturn !== null && (
+            <p>IPO <span className="text-emerald-400 font-bold">{formatIPOReturn(allTimeReturn)}</span></p>
+          )}
+        </div>
+      </div>
+      {/* Chart */}
+      <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="lc-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+        <path d={fillD} fill="url(#lc-grad)" />
+        <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={cx} cy={cy} r="3.5" fill={color} />
+        <circle cx={cx} cy={cy} r="6" fill={color} fillOpacity="0.25" />
+      </svg>
+    </div>
   );
 }
 
@@ -272,31 +360,8 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
               <button onClick={onClose} className="p-2 rounded-xl bg-muted text-muted-foreground active:scale-95"><X className="w-4 h-4" /></button>
             </div>
 
-            {/* IPO return badge */}
-            {allTimeReturn !== null && (
-              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2 mb-4">
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <p className="text-xs text-emerald-400 font-bold">
-                  {formatIPOReturn(allTimeReturn)} since IPO ({ipo.label})
-                </p>
-              </div>
-            )}
-
-            {/* All-time sparkline */}
-            {ipo && (
-              <div className="mb-4 bg-muted/50 rounded-xl p-2">
-                <p className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest mb-1 px-1">All-Time Price Journey</p>
-                <Sparkline
-                  points={generateAllTimeCurve(asset.id, price)}
-                  positive={allTimeReturn >= 0}
-                  width={280} height={48}
-                />
-                <div className="flex justify-between px-1 mt-0.5">
-                  <span className="text-[9px] text-muted-foreground">{ipo.label} ${ipo.ipoPrice < 0.01 ? ipo.ipoPrice.toFixed(4) : ipo.ipoPrice.toFixed(2)}</span>
-                  <span className="text-[9px] text-muted-foreground">Today</span>
-                </div>
-              </div>
-            )}
+            {/* Live 1-min chart */}
+            <LivePriceChart price={price} asset={asset} />
 
             {/* Crypto 24/7 badge */}
             {asset.type === 'crypto' && (
@@ -454,6 +519,7 @@ export default function Portfolio() {
   const [milestone, setMilestone] = useState(null);
   const [realPlayers, setRealPlayers] = useState([]);
   const [marketStatus, setMarketStatus] = useState(getMarketStatus);
+  const [portfolioSnapshots, setPortfolioSnapshots] = useState([]);
   const tickRef = useRef(null);
 
   const lessons  = progress?.completed_lessons?.length ?? 0;
@@ -494,9 +560,7 @@ export default function Portfolio() {
         const next = { ...prev };
         Object.keys(prev).forEach(id => {
           const asset = ASSETS.find(a => a.id === id);
-          // Crypto always moves; stocks only during NYSE hours
           if (asset?.type === 'crypto' || status.open) {
-            // Use full multiplier when open, reduced for after-hours
             const mult = status.open ? SPEED_MULT : asset?.type === 'crypto' ? 3 : 0;
             if (mult === 0) return;
             const single = simulatePriceTick({ [id]: prev[id] }, mult);
@@ -507,7 +571,17 @@ export default function Portfolio() {
       });
     }, TICK_INTERVAL);
     return () => clearInterval(tickRef.current);
-  }, [loading]); // only restart when loading changes
+  }, [loading]);
+
+  // ── Snapshot portfolio value on every price tick for live chart ──
+  useEffect(() => {
+    if (loading || Object.keys(prices).length === 0) return;
+    const inv = (portfolio?.holdings ?? []).reduce(
+      (sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0
+    );
+    const val = (portfolio?.cash ?? STARTING_CASH) + inv;
+    setPortfolioSnapshots(prev => [...prev.slice(-199), val]);
+  }, [prices]);
 
   // ── Refresh market status every minute ──
   useEffect(() => {
@@ -695,8 +769,12 @@ export default function Portfolio() {
           {myRank && <span>Rank: <span className="text-primary font-bold">#{myRank}</span></span>}
         </div>
 
-        <div className="h-28">
-          <PortfolioChart history={history} startingCash={STARTING_CASH} />
+        <div className="h-36 mt-2">
+          <PortfolioChart
+            history={history}
+            startingCash={STARTING_CASH}
+            livePoints={portfolioSnapshots.length >= 2 ? portfolioSnapshots : undefined}
+          />
         </div>
       </div>
 
