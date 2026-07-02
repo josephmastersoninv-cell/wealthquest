@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, EyeOff, Trophy, Crown, Star } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, EyeOff, Trophy, Crown, Star, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { ASSETS, fetchAllPrices, syntheticPoints, SECTORS } from '@/lib/marketData';
 import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { recordPortfolioValue, getPortfolioHistory } from '@/lib/portfolioHistory';
 import { calcPortfolioScore, getGradeColor } from '@/lib/portfolioScore';
+import MilestoneModal, { checkMilestone } from '@/components/MilestoneModal';
+import { toast } from 'sonner';
 
 const PORTFOLIO_KEY = 'wealthquest_portfolio';
 const WATCHLIST_KEY = 'wealthquest_watchlist';
@@ -31,9 +33,8 @@ function generateLeaderboard(prices) {
     { name: 'Noah T.',   avatar: '👨‍🔬', badge: '📊' },
     { name: 'Yuki A.',   avatar: '👩‍🎤', badge: '✨' },
   ];
-  const week = Math.floor(Date.now() / (7 * 86400000));
   return names.map((p, i) => {
-    const rand = seededRand(week * 100 + i);
+    const rand = seededRand(i * 31337 + 9999);
     const cash = 10000 * (0.8 + rand() * 0.4);
     const shuffled = [...ASSETS].sort(() => rand() - 0.5).slice(0, 2 + Math.floor(rand() * 3));
     let value = cash;
@@ -105,73 +106,185 @@ function PortfolioChart({ history, startingCash }) {
   );
 }
 
-// ─── Trade Modal ──────────────────────────────────────────────────────────────
-function TradeModal({ asset, price, onClose, onTrade, cash }) {
-  const [mode, setMode] = useState('buy');
-  const [input, setInput] = useState('');
-  const [inputMode, setInputMode] = useState('dollars');
+// ─── Trade Modal (brokerage-style: amount → confirm → executed) ───────────────
+function TradeModal({ asset, price, onClose, onTrade, cash, holding }) {
+  const [mode, setMode]   = useState('buy');
+  const [dollars, setDollars] = useState('');
+  const [step, setStep]   = useState('amount'); // 'amount' | 'confirm' | 'done'
 
-  const dollars = inputMode === 'dollars' ? parseFloat(input) || 0 : (parseFloat(input) || 0) * price;
-  const shares = inputMode === 'dollars' ? dollars / price : parseFloat(input) || 0;
+  const amt    = parseFloat(dollars) || 0;
+  const shares = price > 0 ? amt / price : 0;
+
+  const maxSell      = holding ? holding.shares * price : 0;
+  const activeMax    = mode === 'buy' ? cash : maxSell;
+  const canReview    = amt > 0 && shares > 0 && amt <= activeMax;
+  const cashAfter    = mode === 'buy' ? cash - amt : cash + (shares * price);
+  const changeInfo   = asset.change ?? 0;
+  const positive     = changeInfo >= 0;
+
+  function confirm() {
+    setStep('done');
+    setTimeout(() => {
+      onTrade(mode, shares, amt);
+    }, 1200);
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
-        className="bg-card rounded-3xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">{asset.emoji}</span>
-            <div>
-              <p className="font-extrabold text-foreground">{asset.symbol}</p>
-              <p className="text-xs text-muted-foreground">${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+      className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-4" onClick={step === 'amount' ? onClose : undefined}>
+      <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
+        className="bg-card rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+
+        {/* ── Step: Amount entry ── */}
+        {step === 'amount' && (
+          <div className="p-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-2xl">{asset.emoji}</div>
+                <div>
+                  <p className="font-extrabold text-foreground text-lg leading-none">{asset.symbol}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{asset.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="font-extrabold text-foreground">${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: price >= 10 ? 2 : 4 })}</p>
+                    <span className={`text-xs font-extrabold ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {positive ? '▲' : '▼'} {Math.abs(changeInfo).toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={onClose} className="p-2 rounded-xl bg-muted text-muted-foreground active:scale-95"><X className="w-4 h-4" /></button>
             </div>
+
+            {/* Buy / Sell toggle */}
+            <div className="flex rounded-xl bg-muted p-1 mb-5">
+              {['buy', 'sell'].map(m => (
+                <button key={m} onClick={() => { setMode(m); setDollars(''); }}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-extrabold capitalize transition-all ${
+                    mode === m
+                      ? m === 'buy' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-rose-500 text-white shadow-sm'
+                      : 'text-muted-foreground'
+                  }`}>{m}
+                </button>
+              ))}
+            </div>
+
+            {/* Amount input */}
+            <div className="relative mb-2">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-extrabold text-muted-foreground">$</span>
+              <input
+                type="number" inputMode="decimal" value={dollars}
+                onChange={e => setDollars(e.target.value)}
+                placeholder="0.00" autoFocus
+                className="w-full bg-muted rounded-2xl py-4 pl-10 pr-4 text-foreground font-extrabold text-2xl focus:outline-none focus:ring-2 focus:ring-primary text-right"
+              />
+            </div>
+
+            {/* Share estimate */}
+            <p className="text-xs text-muted-foreground text-right mb-4 pr-1">
+              {shares > 0 ? `≈ ${shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4)} shares` : 'Enter amount'}
+            </p>
+
+            {/* Quick % buttons */}
+            <div className="grid grid-cols-4 gap-2 mb-5">
+              {(mode === 'buy'
+                ? [{ l: '10%', v: activeMax * 0.10 }, { l: '25%', v: activeMax * 0.25 }, { l: '50%', v: activeMax * 0.50 }, { l: 'All', v: activeMax }]
+                : [{ l: '25%', v: maxSell * 0.25 }, { l: '50%', v: maxSell * 0.50 }, { l: '75%', v: maxSell * 0.75 }, { l: 'All', v: maxSell }]
+              ).map(({ l, v }) => (
+                <button key={l} onClick={() => setDollars(v.toFixed(2))}
+                  className="bg-muted rounded-xl py-2 text-xs font-extrabold text-muted-foreground active:scale-95 hover:bg-muted/70 transition-colors">
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {/* Cash / position info */}
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-5 bg-muted/50 rounded-xl px-3 py-2.5">
+              <span>{mode === 'buy' ? 'Available cash' : 'Position value'}</span>
+              <span className="font-extrabold text-foreground">${activeMax.toFixed(2)}</span>
+            </div>
+
+            {/* Validation message */}
+            {amt > 0 && amt > activeMax && (
+              <p className="text-xs text-rose-400 font-bold text-center mb-3">
+                {mode === 'buy' ? 'Insufficient cash' : 'You don\'t hold that many shares'}
+              </p>
+            )}
+
+            <button
+              onClick={() => canReview && setStep('confirm')}
+              disabled={!canReview}
+              className={`w-full py-4 rounded-2xl font-extrabold text-white text-base transition-all active:scale-[0.98] disabled:opacity-30 ${
+                mode === 'buy' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/25' : 'bg-rose-500 shadow-lg shadow-rose-500/25'
+              }`}>
+              Review Order →
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl bg-muted text-muted-foreground"><X className="w-4 h-4" /></button>
-        </div>
-
-        <div className="flex rounded-xl bg-muted p-1 mb-4">
-          {['buy', 'sell'].map(m => (
-            <button key={m} onClick={() => { setMode(m); setInput(''); }}
-              className={`flex-1 py-2 rounded-lg text-sm font-extrabold capitalize transition-all ${mode === m ? m === 'buy' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white' : 'text-muted-foreground'}`}>
-              {m}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex rounded-lg bg-muted p-0.5 mb-3 text-xs">
-          {['dollars', 'shares'].map(m => (
-            <button key={m} onClick={() => setInputMode(m)}
-              className={`flex-1 py-1 rounded-md font-bold capitalize transition-all ${inputMode === m ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'}`}>
-              {m}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative mb-1">
-          {inputMode === 'dollars' && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">$</span>}
-          <input type="number" value={input} onChange={e => setInput(e.target.value)}
-            placeholder={inputMode === 'dollars' ? '0.00' : '0 shares'}
-            className={`w-full bg-muted rounded-xl py-3 text-foreground font-bold text-lg focus:outline-none focus:ring-2 focus:ring-primary ${inputMode === 'dollars' ? 'pl-7 pr-4' : 'px-4'}`} />
-        </div>
-
-        {dollars > 0 && (
-          <p className="text-xs text-muted-foreground mb-3 px-1">≈ {shares.toFixed(6)} shares · ${dollars.toFixed(2)}</p>
         )}
-        <p className="text-xs text-muted-foreground mb-3 px-1">Cash: ${cash.toFixed(2)}</p>
 
-        <div className="flex gap-2 mb-4">
-          {[25, 50, 75, 100].map(pct => (
-            <button key={pct} onClick={() => { setInputMode('dollars'); setInput(String((cash * pct / 100).toFixed(2))); }}
-              className="flex-1 bg-muted rounded-lg py-1.5 text-xs font-bold text-muted-foreground active:scale-95">{pct}%</button>
-          ))}
-        </div>
+        {/* ── Step: Confirm ── */}
+        {step === 'confirm' && (
+          <div className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <button onClick={() => setStep('amount')} className="p-2 rounded-xl bg-muted text-muted-foreground active:scale-95">
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <p className="font-extrabold text-foreground text-lg">Confirm Order</p>
+            </div>
 
-        <button onClick={() => { if (dollars > 0 && shares > 0) onTrade(mode, shares, dollars); }}
-          disabled={dollars <= 0 || shares <= 0 || (mode === 'buy' && dollars > cash)}
-          className={`w-full py-3.5 rounded-2xl font-extrabold text-white text-sm transition-all active:scale-[0.98] disabled:opacity-40 ${mode === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'}`}>
-          {mode === 'buy' ? `Buy ${shares > 0 ? shares.toFixed(4) + ' shares' : ''}` : `Sell ${shares > 0 ? shares.toFixed(4) + ' shares' : ''}`}
-        </button>
+            {/* Order type badge */}
+            <div className="flex items-center justify-center mb-4">
+              <span className="text-xs font-extrabold bg-muted text-muted-foreground rounded-full px-4 py-1.5 tracking-widest uppercase">
+                Market Order · Instant Fill
+              </span>
+            </div>
+
+            {/* Order summary */}
+            <div className="bg-muted rounded-2xl p-4 mb-4 space-y-3">
+              <div className="flex items-center gap-3 pb-3 border-b border-border">
+                <span className="text-2xl">{asset.emoji}</span>
+                <div>
+                  <p className="font-extrabold text-foreground">{asset.symbol}</p>
+                  <p className="text-xs text-muted-foreground">{asset.name}</p>
+                </div>
+                <span className={`ml-auto text-sm font-extrabold px-3 py-1 rounded-full ${
+                  mode === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                }`}>{mode === 'buy' ? 'BUY' : 'SELL'}</span>
+              </div>
+              {[
+                { label: 'Shares', value: shares < 0.01 ? shares.toFixed(6) : shares.toFixed(4) },
+                { label: 'Price per share', value: `$${price.toFixed(price >= 10 ? 2 : 4)}` },
+                { label: 'Order total', value: `$${amt.toFixed(2)}`, bold: true },
+                { label: 'Cash after', value: `$${cashAfter.toFixed(2)}`, color: cashAfter < 0 ? 'text-rose-400' : 'text-foreground' },
+              ].map(r => (
+                <div key={r.label} className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{r.label}</span>
+                  <span className={`text-sm ${r.bold ? 'font-extrabold text-foreground' : r.color ?? 'text-foreground'}`}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={confirm}
+              className={`w-full py-4 rounded-2xl font-extrabold text-white text-base transition-all active:scale-[0.98] ${
+                mode === 'buy' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/25' : 'bg-rose-500 shadow-lg shadow-rose-500/25'
+              }`}>
+              Confirm {mode === 'buy' ? 'Buy' : 'Sell'}
+            </button>
+          </div>
+        )}
+
+        {/* ── Step: Done ── */}
+        {step === 'done' && (
+          <div className="p-10 flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 20 }}>
+              <CheckCircle2 className={`w-16 h-16 mb-4 ${mode === 'buy' ? 'text-emerald-400' : 'text-rose-400'}`} />
+            </motion.div>
+            <p className="text-2xl font-extrabold text-foreground mb-1">Order Executed</p>
+            <p className="text-sm text-muted-foreground">
+              {mode === 'buy' ? 'Bought' : 'Sold'} {shares.toFixed(4)} {asset.symbol} @ ${price.toFixed(2)}
+            </p>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );
@@ -213,6 +326,7 @@ export default function Portfolio() {
   const [history, setHistory] = useState(getPortfolioHistory);
   const [sortByMovers, setSortByMovers] = useState(false);
   const [expandedNews, setExpandedNews] = useState(null);
+  const [milestone, setMilestone] = useState(null);
 
   const lessons = progress?.completed_lessons?.length ?? 0;
   const unlocked = lessons >= UNLOCK_LESSONS;
@@ -302,6 +416,14 @@ export default function Portfolio() {
     p.trades.push({ type: mode, assetId: asset.id, shares, price, ts: Date.now() });
     savePortfolio(p);
     setTradeAsset(null);
+
+    // Check portfolio milestones after trade settles
+    setTimeout(() => {
+      const inv = p.holdings.reduce((sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0);
+      const newTotal = p.cash + inv;
+      const hit = checkMilestone(newTotal);
+      if (hit) setMilestone(hit);
+    }, 400);
   }
 
   function toggleWatchlist(id) {
@@ -424,7 +546,7 @@ export default function Portfolio() {
         ))}
       </div>
 
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {/* ─── MARKET ─── */}
         {tab === 'market' && (
           <motion.div key="market" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pt-4">
@@ -674,7 +796,7 @@ export default function Portfolio() {
               <Trophy className="w-5 h-5 text-amber-400" />
               <h2 className="text-lg font-extrabold text-foreground">Portfolio Leaderboard</h2>
             </div>
-            <p className="text-xs text-muted-foreground mb-4">Ranked by portfolio value · Resets weekly</p>
+            <p className="text-xs text-muted-foreground mb-4">All-time rankings by total portfolio value</p>
 
             {/* My rank */}
             <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 mb-4 flex items-center gap-3">
@@ -730,8 +852,28 @@ export default function Portfolio() {
       {/* Trade Modal */}
       <AnimatePresence>
         {tradeAsset && (
-          <TradeModal asset={tradeAsset} price={prices[tradeAsset.id]?.price ?? 0}
-            cash={cash} onClose={() => setTradeAsset(null)} onTrade={handleTrade} />
+          <TradeModal
+            asset={tradeAsset}
+            price={prices[tradeAsset.id]?.price ?? 0}
+            cash={cash}
+            holding={holdings.find(h => h.assetId === tradeAsset.id)}
+            onClose={() => setTradeAsset(null)}
+            onTrade={handleTrade}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Milestone Modal */}
+      <AnimatePresence>
+        {milestone && (
+          <MilestoneModal
+            milestone={milestone}
+            onClose={() => setMilestone(null)}
+            onShare={m => {
+              const text = `🏆 I just hit the "${m.label}" milestone on WealthQuest! My portfolio is growing 📈\nhttps://monelingo.vercel.app`;
+              navigator.share ? navigator.share({ text }) : navigator.clipboard.writeText(text).then(() => toast.success('Copied to clipboard!'));
+            }}
+          />
         )}
       </AnimatePresence>
 
