@@ -141,7 +141,7 @@ export default function Profile() {
 
   function shareReferral() {
     const name = localStorage.getItem('wealthquest_display_name') ?? 'A friend';
-    const url = 'https://monelingo.vercel.app';
+    const url = 'https://wealthquest-eta.vercel.app';
     const text = `${name} challenged you to learn finance on WealthQuest! 🏆\nJoin: ${url}`;
     if (navigator.share) { navigator.share({ title: 'WealthQuest', text, url }); }
     else { navigator.clipboard.writeText(text); toast.success('Referral link copied!'); }
