@@ -6,10 +6,10 @@ import { useAuth } from '@/lib/authContext';
 import { checkUsernameAvailable } from '@/lib/playerSync';
 import { isConfigured } from '@/lib/supabase';
 
-const GOAL_KEY   = 'wealthquest_daily_goal';
-const IS_LOCAL   = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const AVATARS    = ['🦁', '🐯', '🦊', '🐺', '🦅', '🐬', '🦋', '🐉', '🦄', '🤖', '👑', '⚡'];
-const GOALS      = [
+const GOAL_KEY = 'wealthquest_daily_goal';
+const IS_LOCAL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const AVATARS  = ['🦁', '🐯', '🦊', '🐺', '🦅', '🐬', '🦋', '🐉', '🦄', '🤖', '👑', '⚡'];
+const GOALS    = [
   { id: 10,  label: 'Casual',  sub: '10 XP / day',  emoji: '🌱' },
   { id: 20,  label: 'Regular', sub: '20 XP / day',  emoji: '🔥' },
   { id: 50,  label: 'Serious', sub: '50 XP / day',  emoji: '⚡' },
@@ -21,42 +21,37 @@ function validateEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 export default function OnboardingModal() {
   const { user, player, loading, isAuthenticated, signUp, signIn, signInWithGoogle, upsertPlayer } = useAuth();
 
-  // Decide whether to show at all
+  // Show if not authenticated, or authenticated but missing country, or just finished sign-up
+  const [signupComplete, setSignupComplete] = useState(false);
   const needsAuth    = !isAuthenticated;
   const needsProfile = isAuthenticated && player && !player.country_code;
-  const show         = !loading && (needsAuth || needsProfile);
+  const show         = !loading && (needsAuth || needsProfile || signupComplete);
 
-  // Auth tab state
-  const [tab, setTab]   = useState('signup'); // 'signup' | 'login'
+  const [tab, setTab]   = useState('signup');
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
 
-  // Sign-up fields
+  // Collected across steps (account NOT created until step 4)
+  const [avatar,   setAvatar]   = useState('🦁');
   const [name,     setName]     = useState('');
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [showPw,   setShowPw]   = useState(false);
-  const [avatar,   setAvatar]   = useState('🦁');
-  const [nameStatus, setNameStatus] = useState('idle'); // idle | checking | taken | available
+  const [country,  setCountry]  = useState(null);
+  const [search,   setSearch]   = useState('');
+  const [goal,     setGoal]     = useState(20);
+  const [nameStatus, setNameStatus] = useState('idle');
   const nameTimer = useRef(null);
 
-  // Profile completion fields
-  const [country, setCountry] = useState(null);
-  const [search,  setSearch]  = useState('');
-  const [goal,    setGoal]    = useState(20);
-
-  // Multi-step (only used in sign-up)
   const [step, setStep] = useState(0);
-  // 0 = auth screen, 1 = pick avatar+name, 2 = country, 3 = goal, 4 = ready
+  // 0 = avatar, 1 = credentials, 2 = country, 3 = goal, 4 = confirm
 
-  // For "check your email" flow after sign-up
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
   const filteredCountries = COUNTRIES.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Debounced username availability check
   useEffect(() => {
     if (!name.trim() || name.trim().length < 2) { setNameStatus('idle'); return; }
     setNameStatus('checking');
@@ -68,90 +63,47 @@ export default function OnboardingModal() {
     return () => clearTimeout(nameTimer.current);
   }, [name]);
 
-  // If player completes profile, hide the modal
   if (!show) return null;
 
-  // ── Profile completion flow (already authenticated, missing country) ──────────
-  if (needsProfile && !needsAuth) {
+  // Already authenticated but missing country → jump straight to country picker
+  if (needsProfile && !needsAuth && !signupComplete) {
     return <ProfileCompleteModal player={player} upsertPlayer={upsertPlayer} setMyCountry={setMyCountry} />;
   }
 
-  // ── Auth flow ─────────────────────────────────────────────────────────────────
-
-  // Returns 'ok' | 'awaiting' | 'error' so advance() can act without stale closure
-  async function handleSignUp() {
-    if (!validateEmail(email)) { setErr('Enter a valid email address.'); return 'error'; }
-    if (password.length < 6)   { setErr('Password must be at least 6 characters.'); return 'error'; }
-    if (nameStatus === 'taken') { setErr('Username is already taken.'); return 'error'; }
-    setBusy(true); setErr('');
-    try {
-      const result = await signUp({
-        email: email.trim(),
-        password,
-        name: name.trim() || email.split('@')[0],
-        avatar,
-        countryCode: country ?? 'US',
-      });
-      const newUser = result?.user;
-      const hasSession = !!result?.session;
-      // Email confirmation required — show waiting screen
-      if (!hasSession && newUser && !newUser.confirmed_at) {
-        setAwaitingConfirmation(true);
-        return 'awaiting';
-      }
-      // Session created immediately (email confirmation disabled) — onAuthStateChange closes modal
-      return 'ok';
-    } catch (e) {
-      setErr(e.message ?? 'Sign up failed. Try again.');
-      return 'error';
-    } finally {
-      setBusy(false);
-    }
+  // ── Success screen (shown after account created + profile saved) ──────────────
+  if (signupComplete) {
+    return (
+      <Backdrop>
+        <div className="text-center space-y-5">
+          <div className="text-6xl">🚀</div>
+          <h2 className="text-2xl font-black text-foreground">You're in{name ? `, ${name}` : ''}!</h2>
+          <p className="text-sm text-muted-foreground">Your account is ready. Time to start building wealth.</p>
+          <div className="space-y-3 text-left">
+            {[
+              { emoji: '📚', title: '50 financial terms', sub: 'Learn through flashcards' },
+              { emoji: '⚔️', title: 'Final Exam', sub: 'Prove your mastery' },
+              { emoji: '🏆', title: 'League rankings', sub: 'Compete with real players worldwide' },
+              { emoji: '💼', title: 'Live portfolio', sub: 'Trade with virtual money against the market' },
+            ].map(f => (
+              <div key={f.title} className="flex items-center gap-4 bg-card border border-border rounded-2xl p-3">
+                <span className="text-2xl">{f.emoji}</span>
+                <div>
+                  <p className="font-extrabold text-sm text-foreground">{f.title}</p>
+                  <p className="text-xs text-muted-foreground">{f.sub}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setSignupComplete(false)}
+            className="w-full h-14 rounded-2xl bg-primary text-white font-extrabold text-base active:scale-95 transition-all">
+            Start Now →
+          </button>
+        </div>
+      </Backdrop>
+    );
   }
 
-  async function handleSignIn() {
-    if (!validateEmail(email)) { setErr('Enter a valid email address.'); return; }
-    if (!password)             { setErr('Enter your password.'); return; }
-    setBusy(true); setErr('');
-    try {
-      await signIn({ email: email.trim(), password });
-      // modal closes automatically via auth state change
-    } catch (e) {
-      setErr(e.message ?? 'Sign in failed. Check your credentials.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleGoogle() {
-    setBusy(true); setErr('');
-    try {
-      await signInWithGoogle();
-    } catch (e) {
-      setErr(e.message ?? 'Google sign in failed.');
-      setBusy(false);
-    }
-  }
-
-  // After sign-up, save goal + country before proceeding
-  async function finishProfile() {
-    setBusy(true);
-    localStorage.setItem(GOAL_KEY, String(goal));
-    if (country) setMyCountry(country);
-    if (user) {
-      await upsertPlayer({
-        name: name.trim() || email.split('@')[0] || 'Investor',
-        avatar,
-        country_code: country ?? 'US',
-        xp: 0,
-        portfolio_value: 10000,
-      });
-    }
-    setBusy(false);
-    // modal closes via player update triggering re-render
-  }
-
-  // Confirmation waiting screen
+  // ── Awaiting email confirmation ────────────────────────────────────────────────
   if (awaitingConfirmation) {
     return (
       <Backdrop>
@@ -169,12 +121,98 @@ export default function OnboardingModal() {
     );
   }
 
+  // ── Creates account + saves profile — called only at final step ───────────────
+  async function handleCreateAccount() {
+    if (!validateEmail(email)) { setErr('Enter a valid email address.'); return 'error'; }
+    if (password.length < 6)   { setErr('Password must be at least 6 characters.'); return 'error'; }
+    if (nameStatus === 'taken') { setErr('Username is already taken.'); return 'error'; }
+    if (!country)              { setErr('Please pick a country first.'); return 'error'; }
+    setBusy(true); setErr('');
+    try {
+      const result = await signUp({
+        email: email.trim(),
+        password,
+        name:        name.trim() || email.split('@')[0],
+        avatar,
+        countryCode: country,
+      });
+      const newUser  = result?.user;
+      const hasSession = !!result?.session;
+
+      // Email confirmation required
+      if (!hasSession && newUser && !newUser.confirmed_at) {
+        setAwaitingConfirmation(true);
+        return 'awaiting';
+      }
+
+      // Session created immediately — save extra profile fields now
+      localStorage.setItem(GOAL_KEY, String(goal));
+      setMyCountry(country);
+      // upsertPlayer uses the newly-signed-in user from authContext
+      await upsertPlayer({
+        name: name.trim() || email.split('@')[0] || 'Investor',
+        avatar,
+        country_code: country,
+        xp: 0,
+        portfolio_value: 10000,
+      });
+      setSignupComplete(true);
+      return 'ok';
+    } catch (e) {
+      setErr(e.message ?? 'Sign up failed. Try again.');
+      return 'error';
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSignIn() {
+    if (!validateEmail(email)) { setErr('Enter a valid email address.'); return; }
+    if (!password)             { setErr('Enter your password.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await signIn({ email: email.trim(), password });
+    } catch (e) {
+      setErr(e.message ?? 'Sign in failed. Check your credentials.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleGoogle() {
+    setBusy(true); setErr('');
+    try {
+      await signInWithGoogle();
+    } catch (e) {
+      setErr(e.message ?? 'Google sign in failed.');
+      setBusy(false);
+    }
+  }
+
+  // ── Sign-up steps (account created at step 4) ─────────────────────────────────
   const signUpSteps = [
-    // Step 0: credentials
+    // Step 0: avatar
     <motion.div key="s0" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-4">
       <div className="text-center">
+        <div className="text-6xl mb-2">{avatar}</div>
+        <h2 className="text-2xl font-black text-foreground">Pick your avatar</h2>
+        <p className="text-sm text-muted-foreground mt-1">Who are you on the leaderboard?</p>
+      </div>
+      <div className="grid grid-cols-6 gap-2">
+        {AVATARS.map(a => (
+          <button key={a} onClick={() => setAvatar(a)}
+            className={`h-11 rounded-2xl text-2xl flex items-center justify-center transition-all ${avatar === a ? 'bg-primary shadow-lg scale-110' : 'bg-muted hover:bg-muted/80'}`}>
+            {a}
+          </button>
+        ))}
+      </div>
+    </motion.div>,
+
+    // Step 1: credentials
+    <motion.div key="s1" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-4">
+      <div className="text-center">
         <div className="text-5xl mb-2">{avatar}</div>
-        <h2 className="text-2xl font-black text-foreground">Join WealthQuest</h2>
+        <h2 className="text-2xl font-black text-foreground">Create your account</h2>
         <p className="text-sm text-muted-foreground mt-1">Compete with players worldwide</p>
       </div>
 
@@ -185,7 +223,6 @@ export default function OnboardingModal() {
           Continue with Google
         </button>
       )}
-
       {isConfigured && !IS_LOCAL && <Divider />}
 
       {/* Username */}
@@ -221,22 +258,6 @@ export default function OnboardingModal() {
             {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
-      </div>
-    </motion.div>,
-
-    // Step 1: avatar
-    <motion.div key="s1" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-4">
-      <div className="text-center">
-        <div className="text-5xl mb-2">{avatar}</div>
-        <h2 className="text-xl font-black text-foreground">Pick your avatar</h2>
-      </div>
-      <div className="grid grid-cols-6 gap-2">
-        {AVATARS.map(a => (
-          <button key={a} onClick={() => setAvatar(a)}
-            className={`h-11 rounded-2xl text-2xl flex items-center justify-center transition-all ${avatar === a ? 'bg-primary shadow-lg scale-110' : 'bg-muted hover:bg-muted/80'}`}>
-            {a}
-          </button>
-        ))}
       </div>
     </motion.div>,
 
@@ -282,43 +303,36 @@ export default function OnboardingModal() {
       </div>
     </motion.div>,
 
-    // Step 4: ready
-    <motion.div key="s4" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-5">
+    // Step 4: confirm + create account
+    <motion.div key="s4" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="space-y-4">
       <div className="text-center">
-        <div className="text-5xl mb-2">🚀</div>
-        <h2 className="text-2xl font-black text-foreground">You're in{name ? `, ${name}` : ''}!</h2>
-        <p className="text-sm text-muted-foreground mt-1">Here's what's waiting</p>
+        <div className="text-5xl mb-2">{avatar}</div>
+        <h2 className="text-xl font-black text-foreground">Ready to go{name ? `, ${name}` : ''}?</h2>
+        <p className="text-sm text-muted-foreground mt-1">Everything looks good — let's create your account</p>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-2">
         {[
-          { emoji: '📚', title: '26 lessons', sub: 'From budgeting basics to derivatives' },
-          { emoji: '⚔️', title: 'Boss Battles', sub: 'Timed challenges at the end of every unit' },
-          { emoji: '🏆', title: 'League rankings', sub: 'Compete with real players worldwide' },
-          { emoji: '💼', title: 'Live portfolio', sub: 'Trade with virtual money against the market' },
-        ].map(f => (
-          <div key={f.title} className="flex items-center gap-4 bg-card border border-border rounded-2xl p-4">
-            <span className="text-2xl">{f.emoji}</span>
-            <div>
-              <p className="font-extrabold text-sm text-foreground">{f.title}</p>
-              <p className="text-xs text-muted-foreground">{f.sub}</p>
-            </div>
+          { label: 'Avatar',   value: avatar },
+          { label: 'Username', value: name || email.split('@')[0] || '—' },
+          { label: 'Country',  value: country ? (COUNTRIES.find(c => c.code === country)?.flag ?? '') + ' ' + (COUNTRIES.find(c => c.code === country)?.name ?? country) : '—' },
+          { label: 'Goal',     value: (GOALS.find(g => g.id === goal)?.emoji ?? '') + ' ' + (GOALS.find(g => g.id === goal)?.label ?? '') },
+        ].map(row => (
+          <div key={row.label} className="flex items-center justify-between bg-muted rounded-2xl px-4 py-3">
+            <span className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">{row.label}</span>
+            <span className="text-sm font-extrabold text-foreground">{row.value}</span>
           </div>
         ))}
       </div>
     </motion.div>,
   ];
 
-  const isLastStep   = step === signUpSteps.length - 1;
-  const canStep0Next = validateEmail(email) && password.length >= 6 && nameStatus !== 'taken' && nameStatus !== 'checking';
-  const canStepNext  = step === 0 ? canStep0Next : step === 2 ? country !== null : true;
+  const isLastStep  = step === signUpSteps.length - 1;
+  const canStep1Next = validateEmail(email) && password.length >= 6 && nameStatus !== 'taken' && nameStatus !== 'checking';
+  const canStepNext = step === 1 ? canStep1Next : step === 2 ? country !== null : true;
 
   async function advance() {
-    if (step === 0) {
-      const result = await handleSignUp();
-      if (result === 'ok') setStep(s => s + 1);
-      // 'awaiting' shows email confirmation screen, 'error' shows error message
-    } else if (isLastStep) {
-      await finishProfile();
+    if (isLastStep) {
+      await handleCreateAccount();
     } else {
       setStep(s => s + 1);
     }
@@ -326,8 +340,8 @@ export default function OnboardingModal() {
 
   return (
     <Backdrop>
-      {/* Tab switcher */}
-      {step === 0 && (
+      {/* Tab switcher (only on step 0 / 1 of sign-up) */}
+      {step <= 1 && (
         <div className="flex bg-muted rounded-2xl p-1 mb-5">
           {['signup', 'login'].map(t => (
             <button key={t} onClick={() => { setTab(t); setErr(''); }}
@@ -369,10 +383,10 @@ export default function OnboardingModal() {
             <button onClick={advance} disabled={!canStepNext || busy}
               className={`w-full h-14 rounded-2xl font-extrabold text-base transition-all ${canStepNext && !busy ? 'bg-primary text-white active:scale-95' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}>
               {busy
-                ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{step === 0 ? 'Creating account…' : 'Saving…'}</span>
-                : isLastStep ? "Let's Go! 🚀" : 'Continue →'}
+                ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{isLastStep ? 'Creating account…' : 'Saving…'}</span>
+                : isLastStep ? 'Create Account 🚀' : 'Continue →'}
             </button>
-            {step > 0 && step < signUpSteps.length - 1 && (
+            {step > 0 && (
               <button onClick={() => setStep(s => s - 1)} className="w-full text-center text-xs text-muted-foreground py-2">← Back</button>
             )}
           </div>
@@ -422,7 +436,6 @@ function LoginView({ email, setEmail, password, setPassword, showPw, setShowPw, 
           Continue with Google
         </button>
       )}
-
       {isConfigured && !IS_LOCAL && <Divider />}
 
       <div>
