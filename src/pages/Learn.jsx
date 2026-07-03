@@ -21,6 +21,8 @@ import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { shouldShowLoginReward } from '@/lib/dailyLoginReward';
 import { getPortfolioHistory } from '@/lib/portfolioHistory';
 import { getCountryByCode, getMyCountry } from '@/lib/countryData';
+import { LearnAdBanner } from '@/components/AdBanner';
+import { fetchUnitLearnerCounts } from '@/lib/playerSync';
 
 function StarRow({ stars }) {
   return (
@@ -115,6 +117,12 @@ export default function Learn() {
   const { progress, updateProgress, newAchievements, dismissAchievements } = useUserProgress();
   const [activeTip, setActiveTip] = useState(null);
   const [showLoginReward, setShowLoginReward] = useState(() => shouldShowLoginReward());
+  const [learnerCounts, setLearnerCounts] = useState({});
+
+  useEffect(() => {
+    const firstLessonIds = UNITS.map(u => u.lessons[0].id);
+    fetchUnitLearnerCounts(firstLessonIds).then(setLearnerCounts);
+  }, []);
   const { show: showIntroRaw, dismiss: dismissIntro } = useSectionIntro('learn');
   // Show section intro only after login reward is dismissed
   const showIntro = showIntroRaw && !showLoginReward;
@@ -200,7 +208,7 @@ export default function Learn() {
 
           // ── LOCKED UNIT — mysterious teaser ──────────────────────
           if (!unitUnlocked) {
-            const fakeCount = 1200 + (unitIdx * 347 + 89) % 3800;
+            const realCount = learnerCounts[unit.lessons[0].id] ?? 0;
             const teaserTerms = unit.lessons.flatMap(l => l.terms).slice(0, 4);
             return (
               <div key={unit.id} className="mx-4 mt-5 mb-2">
@@ -244,7 +252,7 @@ export default function Learn() {
                   <div className="border-t border-border px-4 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] font-bold">
                       <Eye className="w-3 h-3" />
-                      <span>{fakeCount.toLocaleString()} learners unlocked this</span>
+                      <span>{realCount > 0 ? `${realCount.toLocaleString()} learner${realCount === 1 ? '' : 's'} unlocked this` : 'Be the first to unlock this'}</span>
                     </div>
                     <span className="text-[10px] font-extrabold text-muted-foreground">
                       Finish Section {unitIdx} →
@@ -258,6 +266,8 @@ export default function Learn() {
           // ── UNLOCKED UNIT — normal render ─────────────────────────
           return (
             <div key={unit.id} className="mb-2">
+              {/* Ad every 3 units (after unit 2, 5, 8 …) */}
+              {unitIdx > 0 && unitIdx % 3 === 2 && <LearnAdBanner />}
               {/* Unit section banner */}
               <div className="mx-4 mt-5 rounded-2xl overflow-hidden">
                 <div className={`${unitColors.bg} px-4 py-4 flex items-center justify-between`}>

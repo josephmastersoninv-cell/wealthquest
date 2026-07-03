@@ -90,6 +90,25 @@ export async function checkUsernameAvailable(name) {
   return !data || data.length === 0;
 }
 
+// ── Unit learner counts ────────────────────────────────────────────────────────
+// Returns a map of { [firstLessonId]: count } — how many players have that lesson completed.
+// Used by Learn.jsx to show real "X learners unlocked this" counts.
+export async function fetchUnitLearnerCounts(firstLessonIds) {
+  if (!isConfigured || !supabase || !firstLessonIds.length) return {};
+  const { data } = await supabase
+    .from('players')
+    .select('completed_lessons');
+  if (!data) return {};
+  const counts = {};
+  data.forEach(player => {
+    const lessons = player.completed_lessons ?? [];
+    firstLessonIds.forEach(id => {
+      if (lessons.includes(id)) counts[id] = (counts[id] ?? 0) + 1;
+    });
+  });
+  return counts;
+}
+
 // ── Legacy helpers kept for any existing callers ───────────────────────────────
 
 export function getMyPlayerId() {
