@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Moon, Sun, Shield, Zap, Flame, Heart, Trophy, Star, BookOpen, Target, ChevronRight, Check, Crown, Share2, Globe } from 'lucide-react';
+import { Moon, Sun, Shield, Zap, Flame, Heart, Trophy, Star, BookOpen, Target, ChevronRight, Check, Crown, Share2, Globe, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { useTheme } from '@/lib/themeContext';
@@ -11,6 +11,7 @@ import { TOTAL_LESSONS } from '@/lib/unitData';
 import { getMultiplierLabel } from '@/lib/streakMultiplier';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
 import { toast } from 'sonner';
+import { useAuth } from '@/lib/authContext';
 
 const AVATARS = ['🦁', '🦊', '🐺', '🦅', '🐉', '🦋', '🐬', '🦄', '🐻', '🦈', '🐯', '🦉', '🐸', '🦝', '🐼'];
 const AVATAR_KEY = 'wealthquest_avatar';
@@ -69,13 +70,15 @@ function CountryPicker({ onSelect, onClose }) {
 export default function Profile() {
   const { progress, updateProgress } = useUserProgress();
   const { dark, toggle: toggleTheme } = useTheme();
+  const { user, player, signOut, updatePlayer, isAuthenticated } = useAuth();
   const [goalId, setGoalIdState] = useState(getDailyGoal);
   const [freezeOwned, setFreezeOwned] = useState(hasStreakFreeze);
-  const [avatar, setAvatar] = useState(() => localStorage.getItem(AVATAR_KEY) ?? '🦁');
+  const [avatar, setAvatar] = useState(() => player?.avatar ?? localStorage.getItem(AVATAR_KEY) ?? '🦁');
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [activeSection, setActiveSection] = useState(null);
-  const [myCountry, setMyCountryState] = useState(getMyCountry);
+  const [myCountry, setMyCountryState] = useState(() => player?.country_code ?? getMyCountry());
   const [showPicker, setShowPicker] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const xp            = progress?.xp ?? 0;
   const coins         = progress?.coins ?? 0;
@@ -105,13 +108,25 @@ export default function Profile() {
   }
 
   function pickAvatar(emoji) {
-    setAvatar(emoji); localStorage.setItem(AVATAR_KEY, emoji);
-    setShowAvatarPicker(false); toast.success('Avatar updated!');
+    setAvatar(emoji);
+    localStorage.setItem(AVATAR_KEY, emoji);
+    if (isAuthenticated) updatePlayer({ avatar: emoji });
+    setShowAvatarPicker(false);
+    toast.success('Avatar updated!');
   }
 
   function handleSelectCountry(code) {
-    setMyCountry(code); setMyCountryState(code);
+    setMyCountry(code);
+    setMyCountryState(code);
+    if (isAuthenticated) updatePlayer({ country_code: code });
     toast.success(`${getCountryByCode(code)?.flag} Representing ${getCountryByCode(code)?.name}!`);
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    await signOut();
+    setSigningOut(false);
+    toast.success('Signed out.');
   }
 
   function resetPortfolio() {
@@ -177,8 +192,11 @@ export default function Profile() {
                     {league.icon} {league.name}
                   </span>
                 </div>
-                <p className="text-white text-xl font-extrabold">{level.emoji} {level.title}</p>
-                <p className="text-white/60 text-xs">Level {level.level}</p>
+                {player?.name && (
+                  <p className="text-white font-extrabold text-base leading-tight">{player.name}</p>
+                )}
+                <p className="text-white/70 text-sm font-bold">{level.emoji} {level.title}</p>
+                <p className="text-white/50 text-xs">Level {level.level}</p>
                 <div className="flex items-center gap-2 mt-1.5">
                   <div className="w-28 h-1.5 bg-white/20 rounded-full overflow-hidden">
                     <div className="h-full bg-white rounded-full" style={{ width: `${xpPct}%` }} />
@@ -426,6 +444,17 @@ export default function Profile() {
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </button>
+            {isAuthenticated && (
+              <button onClick={handleSignOut} disabled={signingOut}
+                className="w-full flex items-center justify-between px-4 py-3.5 text-left disabled:opacity-50">
+                <div className="flex items-center gap-3">
+                  <LogOut className="w-4 h-4 text-rose-500" />
+                  <span className="text-sm font-bold text-rose-500">
+                    {signingOut ? 'Signing out…' : `Sign Out${user?.email ? ` (${user.email})` : ''}`}
+                  </span>
+                </div>
+              </button>
+            )}
           </div>
         </Section>
 
