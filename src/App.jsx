@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@/lib/themeContext';
+import { AuthProvider } from '@/lib/authContext';
 import Learn from '@/pages/Learn';
 import Flashcards from '@/pages/Flashcards';
 import Exam from '@/pages/Exam';
@@ -30,6 +31,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
+    <AuthProvider>
       <Routes>
         <Route path="/" element={<Learn />} />
         <Route path="/play" element={<Play />} />
@@ -52,6 +54,7 @@ export default function App() {
       </Routes>
       {showNav && <BottomNav />}
       <OnboardingModal />
+    </AuthProvider>
     </ThemeProvider>
   );
 }

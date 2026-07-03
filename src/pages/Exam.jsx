@@ -182,6 +182,36 @@ function ExamResults({ score, total, answers, questions, onRestart, onReview, re
         </motion.div>
       )}
 
+      {/* Portfolio live connection — shown on pass */}
+      {pct >= 75 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+          className="bg-gradient-to-br from-primary/8 to-emerald-500/8 border border-primary/20 rounded-2xl p-4 mb-5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg">📈</span>
+            <p className="text-sm font-extrabold text-foreground">Now See It Live in Your Portfolio</p>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            The concepts you just mastered are moving in the market right now. Watch them play out:
+          </p>
+          {[
+            { term: 'Dividend', stocks: 'JNJ, T, VZ', desc: 'These pay you cash every quarter — watch it appear in your portfolio.', emoji: '💵' },
+            { term: 'Bond', stocks: 'Research → Bonds', desc: 'Buy a bond, then watch its price fall when interest rates rise.', emoji: '🏛️' },
+            { term: 'Volatility', stocks: 'TSLA, NVDA, BTC', desc: 'These move the most — high risk but high potential reward.', emoji: '⚡' },
+          ].map((c, i) => (
+            <div key={i} className="flex items-start gap-2 py-2 border-t border-border/40 first:border-t-0">
+              <span className="text-base mt-0.5">{c.emoji}</span>
+              <div>
+                <p className="text-xs font-extrabold text-foreground">{c.term} → <span className="text-primary">{c.stocks}</span></p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{c.desc}</p>
+              </div>
+            </div>
+          ))}
+          <Link to="/portfolio" className="block mt-3">
+            <Button className="w-full rounded-xl font-bold h-11">Open Portfolio →</Button>
+          </Link>
+        </motion.div>
+      )}
+
       {/* Mistakes */}
       {wrong.length > 0 && (
         <div className="mb-5">

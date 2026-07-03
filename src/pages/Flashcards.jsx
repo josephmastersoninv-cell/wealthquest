@@ -323,6 +323,10 @@ export default function Flashcards() {
           <button onClick={() => setWeakMode(false)} className="mt-6 bg-white text-black font-extrabold px-6 py-3 rounded-2xl text-sm">
             Review All Terms
           </button>
+          <Link to="/portfolio"
+            className="mt-3 bg-emerald-500 text-white font-extrabold px-6 py-3 rounded-2xl text-sm block text-center active:opacity-80">
+            📈 See these concepts live in Portfolio →
+          </Link>
         </div>
       ) : (
         /* TikTok scroll container */

@@ -5,6 +5,7 @@ import { useUserProgress } from '@/lib/useUserProgress';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
 import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, getPassiveXpToday, claimPassiveXp, SQUAD_MAX, RECRUIT_TIERS, getWeekSeed } from '@/lib/squadData';
 import { fetchXpLeaderboard, fetchCountryTotals, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
+import { useAuth } from '@/lib/authContext';
 import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getStockResult, getTimeUntilReveal } from '@/lib/arenaData';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -178,10 +179,20 @@ function RecruitCard({ player, inSquad, squadFull, onRecruit, onDismiss, coins }
 export default function League() {
   const navigate = useNavigate();
   const { progress, updateProgress } = useUserProgress();
+  const { player: authPlayer, isAuthenticated } = useAuth();
   const briefingReadToday = localStorage.getItem('wealthquest_briefing_read') === new Date().toISOString().slice(0, 10);
   const myXp        = progress?.xp ?? 0;
   const myCoins     = progress?.coins ?? 0;
-  const myPortfolio = progress?.portfolio_balance ?? 10000;
+  const myPortfolio = (() => {
+    try {
+      const p = JSON.parse(localStorage.getItem('wealthquest_portfolio') ?? 'null');
+      if (!p) return progress?.portfolio_balance ?? 10000;
+      const cash = p.cash ?? 0;
+      const invested = (p.holdings ?? []).reduce((s, h) => s + h.avgCost * h.shares, 0);
+      const bondVal  = (p.bondHoldings ?? []).reduce((s, b) => s + b.purchasePrice * b.quantity, 0);
+      return cash + invested + bondVal;
+    } catch { return progress?.portfolio_balance ?? 10000; }
+  })();
   const league      = getCurrentLeague(myXp);
 
   const [tab, setTab]         = useState('arena');
@@ -237,11 +248,14 @@ export default function League() {
       return { id: `ghost-${i}`, name: GHOST_NAMES[nameIdx % GHOST_NAMES.length], flag: country.flag, countryName: country.name, xp: Math.max(10, Math.round(baseXp + variance)), isGhost: true };
     });
     const myCountryData = myCountry ? getCountryByCode(myCountry) : null;
-    const me = { id: 'me', name: myPlayerData?.name ?? 'You', avatar: myPlayerData?.avatar, flag: myCountryData?.flag ?? '⭐', xp: myXp, isMe: true };
+    const myName = authPlayer?.name ?? myPlayerData?.name ?? 'You';
+    const myAvatar = authPlayer?.avatar ?? myPlayerData?.avatar;
+    const me = { id: 'me', name: myName, avatar: myAvatar, flag: myCountryData?.flag ?? '⭐', xp: myXp, isMe: true };
 
     if (realPlayers.length) {
+      const myAuthId = authPlayer?.id ?? myPlayerId;
       const others = realPlayers
-        .filter(p => p.id !== myPlayerId)
+        .filter(p => p.id !== myAuthId)
         .map(p => {
           const c = getCountryByCode(p.country_code);
           return { id: p.id, name: p.name, avatar: p.avatar, flag: c?.flag ?? '🌍', xp: p.xp ?? 0, real: true };

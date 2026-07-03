@@ -1,16 +1,19 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrendingUp, TrendingDown, RefreshCw, X, ChevronUp, ChevronDown, Eye, EyeOff,
-         Trophy, Crown, Star, ArrowLeft, CheckCircle2, Lock, Clock, Activity } from 'lucide-react';
+         Trophy, Crown, Star, ArrowLeft, CheckCircle2, Lock, Clock, Activity, AlertTriangle } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { ASSETS, fetchAllPrices, syntheticPoints, SECTORS,
-         getMarketStatus, simulatePriceTick, IPO_DATA, generateAllTimeCurve, generateCandles } from '@/lib/marketData';
+         getMarketStatus, simulatePriceTick, IPO_DATA, generateAllTimeCurve, generateCandles,
+         DIVIDENDS, getEarningsHistory, earningsShockMultiplier,
+         BONDS, BOND_RATING_COLOR, SECTOR_ROTATION_EVENTS, getBondPrice, RECESSION_NEWS } from '@/lib/marketData';
 import SectionIntro, { useSectionIntro } from '@/components/SectionIntro';
 import { recordPortfolioValue, getPortfolioHistory } from '@/lib/portfolioHistory';
 import { calcPortfolioScore, getGradeColor } from '@/lib/portfolioScore';
 import MilestoneModal, { checkMilestone } from '@/components/MilestoneModal';
 import { toast } from 'sonner';
 import { fetchLeaderboard, syncPortfolioValue, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
+import marketSim from '@/lib/marketSim';
 import { getCountryByCode } from '@/lib/countryData';
 
 const PORTFOLIO_KEY   = 'wealthquest_portfolio';
@@ -19,6 +22,8 @@ const STARTING_CASH   = 10000;
 const UNLOCK_LESSONS  = 5;
 const TICK_INTERVAL   = 8000; // ms between live price ticks
 const SPEED_MULT      = 5;    // 5× amplified volatility
+
+// (snapshot cache is now owned by marketSim — see src/lib/marketSim.js)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function seededRand(seed) {
@@ -95,7 +100,6 @@ function Sparkline({ points, positive, width = 64, height = 28 }) {
 
 // ─── Portfolio live chart ─────────────────────────────────────────────────────
 function PortfolioChart({ history, startingCash, livePoints }) {
-  // Prefer live in-session points; fall back to persisted history
   const values = livePoints?.length >= 2
     ? livePoints
     : history?.length >= 2 ? history.map(h => h.value) : null;
@@ -108,32 +112,38 @@ function PortfolioChart({ history, startingCash, livePoints }) {
       </div>
     );
   }
-  const latest  = values.at(-1);
-  const positive = latest >= startingCash;
-  const color   = positive ? '#10b981' : '#f43f5e';
-  const min = Math.min(startingCash * 0.95, ...values);
-  const max = Math.max(startingCash * 1.05, ...values);
+  const latest   = values.at(-1);
+  const first    = values[0];
+  const positive = latest >= first;
+  const color    = positive ? '#10b981' : '#f43f5e';
+  const min = Math.min(...values) * 0.999;
+  const max = Math.max(...values) * 1.001;
   const range = max - min || 1;
-  const w = 340, h = 110;
-  const step = w / Math.max(values.length - 1, 1);
-  const py = v => h - 4 - ((v - min) / range) * (h - 12);
-  const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${i * step} ${py(v)}`).join(' ');
-  const fillD = `${d} L ${(values.length - 1) * step} ${h} L 0 ${h} Z`;
-  const baseline = py(startingCash);
+  const W = 340, H = 100;
+  const step = W / Math.max(values.length - 1, 1);
+  const py = v => H - 2 - ((v - min) / range) * (H - 8);
+  const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i * step).toFixed(1)} ${py(v).toFixed(1)}`).join(' ');
+  const fillD = `${d} L ${((values.length - 1) * step).toFixed(1)} ${H} L 0 ${H} Z`;
+  const cx = (values.length - 1) * step;
+  const cy = py(latest);
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
-      <line x1="0" y1={baseline} x2={w} y2={baseline}
-        stroke="currentColor" strokeWidth="0.6" strokeDasharray="4 3" className="text-border" />
+    <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
       <defs>
         <linearGradient id="pf-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="0%"   stopColor={color} stopOpacity="0.22" />
           <stop offset="100%" stopColor={color} stopOpacity="0.02" />
         </linearGradient>
       </defs>
       <path d={fillD} fill="url(#pf-grad)" />
       <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={(values.length - 1) * step} cy={py(latest)} r="4" fill={color} />
-      <circle cx={(values.length - 1) * step} cy={py(latest)} r="7" fill={color} fillOpacity="0.2" />
+      {/* live dot */}
+      <circle cx={cx} cy={cy} r="3.5" fill={color} />
+      <circle cx={cx} cy={cy} r="7"   fill={color} fillOpacity="0.18" />
+      {/* current value label */}
+      <rect x={cx - 38} y={cy - 16} width="46" height="13" rx="3" fill={color} fillOpacity="0.15" />
+      <text x={cx - 15} y={cy - 6} fill={color} fontSize="8.5" fontFamily="monospace" textAnchor="middle">
+        ${latest.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+      </text>
     </svg>
   );
 }
@@ -872,6 +882,77 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, m
 }
 
 // ─── (LivePriceChart kept for reference — replaced by CandlestickChart) ───────
+const SECTOR_COLORS = {
+  Technology: '#6366f1', Consumer: '#f59e0b', Finance: '#10b981', Healthcare: '#ec4899',
+  Energy: '#f97316', Industrials: '#64748b', Communication: '#06b6d4', Materials: '#84cc16',
+  'Real Estate': '#a78bfa', Commodities: '#fbbf24', 'Broad Market': '#94a3b8',
+  Innovation: '#8b5cf6', Bonds: '#f59e0b',
+};
+
+function EarningsModal({ data, onClose }) {
+  const [progress, setProgress] = useState(100);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const start = Date.now();
+    const dur   = 7000;
+    const id    = setInterval(() => {
+      const pct = Math.max(0, 100 - ((Date.now() - start) / dur) * 100);
+      setProgress(pct);
+      if (pct <= 0) { clearInterval(id); onCloseRef.current(); }
+    }, 80);
+    return () => clearInterval(id);
+  }, []);
+  const { asset, rpt, shock } = data;
+  const changePct = ((shock - 1) * 100).toFixed(1);
+  return (
+    <motion.div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <motion.div className="relative bg-card border border-border rounded-3xl p-6 w-full max-w-sm shadow-2xl z-10"
+        initial={{ scale: 0.85, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0 }}>
+        <button onClick={onClose} className="absolute top-4 right-4 p-1 text-muted-foreground active:opacity-70">
+          <X className="w-5 h-5" />
+        </button>
+        <div className="text-center mb-4">
+          <p className="text-4xl mb-2">{asset.emoji}</p>
+          <p className="text-lg font-extrabold text-foreground">{asset.symbol} Earnings Report</p>
+          <p className="text-xs text-muted-foreground">{rpt.quarter} · Just Filed</p>
+        </div>
+        <div className={`text-center rounded-2xl p-4 mb-4 ${rpt.beat ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/20'}`}>
+          <p className={`text-2xl font-extrabold mb-1 ${rpt.beat ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {rpt.beat ? '✅ BEAT' : '❌ MISS'}
+          </p>
+          <p className={`text-sm font-bold ${rpt.beat ? 'text-emerald-400' : 'text-rose-400'}`}>
+            EPS {rpt.surprisePct > 0 ? '+' : ''}{rpt.surprisePct}% vs estimates
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">Actual ${rpt.epsActual} · Estimated ${rpt.epsEst}</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="bg-muted rounded-xl p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground">Revenue</p>
+            <p className="text-xs font-extrabold text-foreground">${rpt.revActual}B</p>
+          </div>
+          <div className="bg-muted rounded-xl p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground">Guidance</p>
+            <p className="text-xs font-extrabold text-foreground capitalize">{rpt.guidance}</p>
+          </div>
+          <div className="bg-muted rounded-xl p-2.5 text-center">
+            <p className="text-[10px] text-muted-foreground">Price Impact</p>
+            <p className={`text-xs font-extrabold ${rpt.beat ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {rpt.beat ? '+' : ''}{changePct}%
+            </p>
+          </div>
+        </div>
+        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+          <div className="h-full bg-primary rounded-full" style={{ width: `${progress}%`, transition: 'none' }} />
+        </div>
+        <p className="text-center text-[10px] text-muted-foreground mt-1.5">Tap × to dismiss</p>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function LivePriceChart({ price, asset }) {
   const [pts, setPts] = useState([price]);
   const openRef = useRef(price);
@@ -1233,8 +1314,8 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Portfolio() {
   const { progress } = useUserProgress();
-  const [prices, setPrices]       = useState({});
-  const [loading, setLoading]     = useState(true);
+  const [prices, setPrices]       = useState(() => ({ ...marketSim.prices }));
+  const [loading, setLoading]     = useState(() => Object.keys(marketSim.prices).length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [portfolio, setPortfolio] = useState(() => {
     try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) ?? 'null'); } catch { return null; }
@@ -1252,8 +1333,33 @@ export default function Portfolio() {
   const [milestone, setMilestone] = useState(null);
   const [realPlayers, setRealPlayers] = useState([]);
   const [marketStatus, setMarketStatus] = useState(getMarketStatus);
-  const [portfolioSnapshots, setPortfolioSnapshots] = useState([]);
-  const tickRef = useRef(null);
+  const [portfolioSnapshots, setPortfolioSnapshots] = useState(() => [...marketSim.snapshots]);
+  const portfolioRef = useRef(null);
+  // Research tab
+  const [researchQuery, setResearchQuery] = useState('');
+  const [researchAsset, setResearchAsset] = useState(null);
+  // Dividends
+  const DRIP_KEY = 'wq_drip';
+  const [drip, setDrip] = useState(() => { try { return JSON.parse(localStorage.getItem(DRIP_KEY) ?? '{}'); } catch { return {}; } });
+  const divTimerRef = useRef(null);
+  const earningsTimerRef = useRef(null);
+  const inflationTimerRef = useRef(null);
+  const [inflationTick, setInflationTick] = useState(0);
+
+  // Earnings center-modal
+  const [earningsModal, setEarningsModal] = useState(null); // { asset, rpt, shock }
+  // Sector rotation event (transient — shows news for 10s)
+  const [sectorEvent, setSectorEvent] = useState(null); // { name, news, boomSector, crashSector }
+  // Recession phase: null | 'warning3' | 'warning2' | 'warning1' | 'active'
+  const [recessionPhase, setRecessionPhase] = useState(null);
+  // Simulated base interest rate (affects bond prices)
+  const [baseRate, setBaseRate] = useState(4.5);
+  // Bond trade panel: { bond, mode:'buy'|'sell', qty: string }
+  const [bondTrade, setBondTrade] = useState(null);
+
+  const sectorTimerRef    = useRef(null);
+  const recessionTimerRef = useRef(null);
+  const rateTimerRef      = useRef(null);
 
   const lessons  = progress?.completed_lessons?.length ?? 0;
   const unlocked = lessons >= UNLOCK_LESSONS;
@@ -1262,59 +1368,48 @@ export default function Portfolio() {
   // ── Init portfolio ──
   useEffect(() => {
     if (!localStorage.getItem(PORTFOLIO_KEY)) {
-      const init = { cash: STARTING_CASH, holdings: [], trades: [] };
+      const init = { cash: STARTING_CASH, holdings: [], trades: [], bondHoldings: [] };
       localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(init));
       setPortfolio(init);
     }
+    if (!localStorage.getItem('wq_game_start')) {
+      localStorage.setItem('wq_game_start', Date.now().toString());
+    }
   }, []);
 
-  // ── Fetch real prices on mount ──
+  // Keep portfolio ref synced and push to sim so it can compute snapshots off-page
+  useEffect(() => { portfolioRef.current = portfolio; marketSim.setPortfolio(portfolio); }, [portfolio]);
+
+  // ── Fetch real prices on mount (idempotent — sim skips if already loaded) ──
   const loadPrices = useCallback(async () => {
     setRefreshing(true);
-    const p = await fetchAllPrices();
-    Object.keys(p).forEach(id => {
-      if (!p[id].points?.length) p[id] = { ...p[id], points: syntheticPoints(p[id].price, p[id].change) };
-    });
-    setPrices(p);
+    await marketSim.init();
+    setPrices({ ...marketSim.prices });
     setLoading(false);
     setRefreshing(false);
   }, []);
 
   useEffect(() => { loadPrices(); }, [loadPrices]);
 
-  // ── Live price simulation — 5× speed ──
+  // ── Subscribe to marketSim tick updates (prices + snapshots) ──
+  // marketSim runs its own interval forever — even when Portfolio is unmounted —
+  // so the chart continues advancing while the user is on other pages.
   useEffect(() => {
-    if (loading || Object.keys(prices).length === 0) return;
-    clearInterval(tickRef.current);
-    tickRef.current = setInterval(() => {
-      const status = getMarketStatus();
-      setMarketStatus(status);
-      setPrices(prev => {
-        const next = { ...prev };
-        Object.keys(prev).forEach(id => {
-          const asset = ASSETS.find(a => a.id === id);
-          if (asset?.type === 'crypto' || status.open) {
-            const mult = status.open ? SPEED_MULT : asset?.type === 'crypto' ? 3 : 0;
-            if (mult === 0) return;
-            const single = simulatePriceTick({ [id]: prev[id] }, mult);
-            next[id] = single[id];
-          }
-        });
-        return next;
-      });
-    }, TICK_INTERVAL);
-    return () => clearInterval(tickRef.current);
-  }, [loading]);
+    const unsubP = marketSim.onPrices(() => {
+      setMarketStatus(getMarketStatus());
+      setPrices({ ...marketSim.prices });
+    });
+    const unsubS = marketSim.onSnapshots(() => {
+      setPortfolioSnapshots([...marketSim.snapshots]);
+    });
+    return () => { unsubP(); unsubS(); };
+  }, []);
 
-  // ── Snapshot portfolio value on every price tick for live chart ──
-  useEffect(() => {
-    if (loading || Object.keys(prices).length === 0) return;
-    const inv = (portfolio?.holdings ?? []).reduce(
-      (sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0
-    );
-    const val = (portfolio?.cash ?? STARTING_CASH) + inv;
-    setPortfolioSnapshots(prev => [...prev.slice(-199), val]);
-  }, [prices]);
+  // Helper: apply a price mutation via the sim (keeps sim.prices in sync) then update React state
+  const updatePrices = useCallback(updater => {
+    marketSim.updatePrices(updater);
+    setPrices({ ...marketSim.prices });
+  }, []);
 
   // ── Refresh market status every minute ──
   useEffect(() => {
@@ -1322,13 +1417,211 @@ export default function Portfolio() {
     return () => clearInterval(id);
   }, []);
 
+  // ── Dividends — pay out every 120 s (= 1 simulated quarter) ──
+  useEffect(() => {
+    clearInterval(divTimerRef.current);
+    divTimerRef.current = setInterval(() => {
+      const p = portfolio;
+      if (!p || Object.keys(prices).length === 0) return;
+      const hs = (p.holdings ?? []).filter(h => h.shares > 0.0001 && DIVIDENDS[h.assetId]);
+      if (hs.length === 0) return;
+      const updated = { ...p, holdings: [...(p.holdings ?? [])], trades: [...(p.trades ?? [])] };
+      let cashDelta = 0;
+      const msgs = [];
+      hs.forEach(h => {
+        const div   = DIVIDENDS[h.assetId];
+        const price = prices[h.assetId]?.price ?? h.avgCost;
+        const amt   = h.shares * price * (div.annualYield / 4); // quarterly
+        const isDrip = drip[h.assetId];
+        if (isDrip) {
+          // reinvest: buy more shares
+          const newShares = amt / price;
+          const holding = updated.holdings.find(x => x.assetId === h.assetId);
+          if (holding) {
+            const tot = holding.shares + newShares;
+            holding.avgCost = (holding.avgCost * holding.shares + price * newShares) / tot;
+            holding.shares  = tot;
+          }
+          msgs.push(`🔄 ${h.assetId} dividend reinvested — +${newShares.toFixed(4)} shares`);
+        } else {
+          cashDelta += amt;
+          msgs.push(`💵 ${h.assetId} dividend $${amt.toFixed(2)} → cash`);
+        }
+      });
+      // Bond coupon payments (quarterly, same timer)
+      let bondCashDelta = 0;
+      (p.bondHoldings ?? []).forEach(bh => {
+        const bond = BONDS.find(b => b.id === bh.bondId);
+        if (!bond) return;
+        const coupon = bh.quantity * bond.faceValue * (bond.coupon / 100 / 4);
+        bondCashDelta += coupon;
+        if (coupon > 0.001) msgs.push(`🏛️ ${bond.name} coupon $${coupon.toFixed(2)} → cash`);
+      });
+      updated.cash = (updated.cash ?? STARTING_CASH) + cashDelta + bondCashDelta;
+      savePortfolio(updated);
+      msgs.forEach((m, i) => setTimeout(() => toast.success(m, { duration: 4000 }), i * 600));
+    }, 120000);
+    return () => clearInterval(divTimerRef.current);
+  }, [portfolio, prices, drip]);
+
+  // ── Earnings events — 4× per year means one per quarter (~8–12 min in game) ──
+  useEffect(() => {
+    clearTimeout(earningsTimerRef.current);
+    const schedule = () => {
+      const delay = 480000 + Math.random() * 240000; // 8–12 minutes
+      earningsTimerRef.current = setTimeout(() => {
+        const hs = (portfolio?.holdings ?? []).filter(h => h.shares > 0.0001 && ASSETS.find(a => a.id === h.assetId)?.type !== 'crypto');
+        if (hs.length === 0 || Object.keys(prices).length === 0) { schedule(); return; }
+        const h     = hs[Math.floor(Math.random() * hs.length)];
+        const hist  = getEarningsHistory(h.assetId);
+        const rpt   = hist[hist.length - 1]; // latest quarter
+        const shock = earningsShockMultiplier(rpt.beat, rpt.surprisePct);
+        // Apply earnings shock to the stock price
+        updatePrices(prev => {
+          const pd = prev[h.assetId];
+          if (!pd) return prev;
+          const newPrice = pd.price * shock;
+          return {
+            ...prev,
+            [h.assetId]: {
+              ...pd,
+              price: newPrice,
+              basePrice: (pd.basePrice ?? pd.price) * shock,
+              change: ((newPrice - (pd.basePrice ?? newPrice)) / (pd.basePrice ?? newPrice)) * 100,
+              points: [...(pd.points?.slice(-49) ?? []), newPrice],
+            }
+          };
+        });
+        const asset = ASSETS.find(a => a.id === h.assetId);
+        if (asset) setEarningsModal({ asset, rpt, shock });
+        schedule();
+      }, delay);
+    };
+    if (!loading && Object.keys(prices).length > 0) schedule();
+    return () => clearTimeout(earningsTimerRef.current);
+  }, [loading, portfolio]);
+
+  // ── Inflation — erodes idle cash ~3% annually, fires every 90 s ──
+  // Each tick: cash × (1 - annualRate/4/10) roughly simulates quarterly inflation
+  useEffect(() => {
+    clearInterval(inflationTimerRef.current);
+    inflationTimerRef.current = setInterval(() => {
+      const p = portfolio;
+      if (!p || (p.cash ?? STARTING_CASH) < 1) return;
+      const ANNUAL_RATE = 0.03; // 3% annual
+      const tickRate    = ANNUAL_RATE / (365 * 24 * 40); // 40 ticks/hr = ~every 90s
+      const erosion     = (p.cash ?? STARTING_CASH) * tickRate;
+      if (erosion < 0.001) return;
+      savePortfolio({ ...p, cash: (p.cash ?? STARTING_CASH) - erosion });
+      setInflationTick(n => n + 1);
+    }, 90000);
+    return () => clearInterval(inflationTimerRef.current);
+  }, [portfolio]);
+
+  // ── Recession check — runs on mount and every hour ──
+  useEffect(() => {
+    const check = () => {
+      const gameStart  = parseInt(localStorage.getItem('wq_game_start') ?? Date.now());
+      const daysSince  = (Date.now() - gameStart) / 86400000;
+      const cycle      = Math.floor(daysSince / 100);
+      const dayInCycle = daysSince % 100;
+      const lastApplied = parseInt(localStorage.getItem('wq_last_recession_applied') ?? '-1');
+
+      let phase = null;
+      if      (dayInCycle >= 99) phase = 'active';
+      else if (dayInCycle >= 98) phase = 'warning1';
+      else if (dayInCycle >= 97) phase = 'warning2';
+      else if (dayInCycle >= 96) phase = 'warning3';
+      setRecessionPhase(phase);
+
+      if (phase === 'active' && lastApplied < cycle && Object.keys(marketSim.prices).length > 0) {
+        localStorage.setItem('wq_last_recession_applied', cycle.toString());
+        updatePrices(prev => {
+          const next = { ...prev };
+          Object.keys(prev).forEach(id => {
+            const asset = ASSETS.find(a => a.id === id);
+            const isSafeHaven = ['GLD', 'SLV', 'TLT'].includes(id) || asset?.sector === 'Bonds';
+            const mult = isSafeHaven
+              ? 1.03 + Math.random() * 0.04
+              : 0.68 + Math.random() * 0.14;
+            const pd  = prev[id];
+            const np  = pd.price * mult;
+            const base = (pd.basePrice ?? pd.price) * mult;
+            next[id]  = { ...pd, price: np, basePrice: base, change: ((np - base) / base) * 100, points: [...(pd.points?.slice(-49) ?? []), np] };
+          });
+          return next;
+        });
+        toast.error('🔴 RECESSION: Markets crash — bonds & gold holding. Diversification matters!', { duration: 10000 });
+      }
+    };
+    check();
+    recessionTimerRef.current = setInterval(check, 3600000);
+    return () => clearInterval(recessionTimerRef.current);
+  }, []); // eslint-disable-line
+
+  // ── Sector rotation — every 2–4 min, one sector crashes while another booms ──
+  useEffect(() => {
+    if (loading) return;
+    clearTimeout(sectorTimerRef.current);
+    const schedule = () => {
+      const delay = 120000 + Math.random() * 120000;
+      sectorTimerRef.current = setTimeout(() => {
+        const ev = SECTOR_ROTATION_EVENTS[Math.floor(Math.random() * SECTOR_ROTATION_EVENTS.length)];
+        updatePrices(prev => {
+          const next = { ...prev };
+          Object.keys(prev).forEach(id => {
+            const asset = ASSETS.find(a => a.id === id);
+            if (!asset?.sector) return;
+            const isCrash = asset.sector === ev.crashSector;
+            const isBoom  = asset.sector === ev.boomSector;
+            if (!isCrash && !isBoom) return;
+            const mult = isCrash
+              ? ev.crashMult + (Math.random() - 0.5) * 0.02
+              : ev.boomMult  + (Math.random() - 0.5) * 0.02;
+            const pd   = prev[id];
+            const np   = pd.price * mult;
+            const base = (pd.basePrice ?? pd.price) * mult;
+            next[id]   = { ...pd, price: np, basePrice: base, change: ((np - base) / base) * 100, points: [...(pd.points?.slice(-49) ?? []), np] };
+          });
+          return next;
+        });
+        setSectorEvent(ev);
+        setTimeout(() => setSectorEvent(null), 12000);
+        schedule();
+      }, delay);
+    };
+    schedule();
+    return () => clearTimeout(sectorTimerRef.current);
+  }, [loading]);
+
+  // ── Bond base rate — drifts ±0.05–0.12% every 60 s ──
+  useEffect(() => {
+    rateTimerRef.current = setInterval(() => {
+      setBaseRate(r => Math.max(2.0, Math.min(8.0, r + (Math.random() - 0.48) * 0.12)));
+    }, 60000);
+    return () => clearInterval(rateTimerRef.current);
+  }, []);
+
   const cash     = portfolio?.cash ?? STARTING_CASH;
-  const holdings = portfolio?.holdings ?? [];
+  const holdings = (portfolio?.holdings ?? []).filter(h => h.shares > 0.0001);
+  const shorts   = portfolio?.shorts   ?? [];
+
+  const investedValue = useMemo(() =>
+    holdings.reduce((sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0),
+  [holdings, prices]);
+
+  const bondValue = useMemo(() =>
+    (portfolio?.bondHoldings ?? []).reduce((sum, bh) => {
+      const bond = BONDS.find(b => b.id === bh.bondId);
+      return sum + bh.quantity * getBondPrice(bond, baseRate);
+    }, 0),
+  [portfolio, baseRate]);
 
   const totalValue = useMemo(() => {
-    const inv = holdings.reduce((sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0);
-    return cash + inv;
-  }, [holdings, prices, cash]);
+    const shortPnl  = shorts.reduce((sum, s) => sum + (s.entryPrice - (prices[s.assetId]?.price ?? s.entryPrice)) * s.shares, 0);
+    const margin    = shorts.reduce((sum, s) => sum + s.entryPrice * s.shares, 0);
+    return cash + investedValue + margin + shortPnl + bondValue;
+  }, [investedValue, shorts, prices, cash, bondValue]);
 
   useEffect(() => {
     if (!loading && totalValue > 0) {
@@ -1407,9 +1700,9 @@ export default function Portfolio() {
       p.cash -= dollars;
     } else if (mode === 'sell') {
       const h = p.holdings.find(h => h.assetId === asset.id);
-      if (!h || h.shares < shares) return;
+      if (!h || h.shares < shares - 0.000001) return;
       h.shares -= shares;
-      if (h.shares < 0.000001) p.holdings = p.holdings.filter(x => x.assetId !== asset.id);
+      if (h.shares < 0.0001) p.holdings = p.holdings.filter(x => x.assetId !== asset.id);
       p.cash += price * shares;
     } else if (mode === 'short') {
       // Post cash as margin (collateral = shares × price)
@@ -1453,6 +1746,41 @@ export default function Portfolio() {
 
   const allSectors = ['All', 'Watchlist', ...SECTORS];
 
+  function toggleDrip(assetId) {
+    setDrip(prev => {
+      const next = { ...prev, [assetId]: !prev[assetId] };
+      localStorage.setItem(DRIP_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function handleBondTrade(bond, mode, quantity) {
+    const price = getBondPrice(bond, baseRate);
+    const cost  = price * quantity;
+    const p = {
+      ...portfolio,
+      bondHoldings: [...(portfolio?.bondHoldings ?? [])],
+      trades: [...(portfolio?.trades ?? [])],
+    };
+    if (mode === 'buy') {
+      if (cost > p.cash) { toast.error('Insufficient cash for this bond purchase'); return; }
+      const ex = p.bondHoldings.find(bh => bh.bondId === bond.id);
+      if (ex) { ex.quantity += quantity; }
+      else    { p.bondHoldings.push({ bondId: bond.id, quantity, purchasePrice: price }); }
+      p.cash -= cost;
+      toast.success(`Bought ${quantity}× ${bond.name} @ $${price.toFixed(0)}/bond · ${bond.coupon}% coupon`);
+    } else {
+      const ex = p.bondHoldings.find(bh => bh.bondId === bond.id);
+      if (!ex || ex.quantity < quantity) { toast.error('Not enough bonds to sell'); return; }
+      ex.quantity -= quantity;
+      if (ex.quantity <= 0) p.bondHoldings = p.bondHoldings.filter(bh => bh.bondId !== bond.id);
+      p.cash += cost;
+      toast.success(`Sold ${quantity}× ${bond.name} @ $${price.toFixed(0)}/bond`);
+    }
+    savePortfolio(p);
+    setBondTrade(null);
+  }
+
   const filteredAssets = useMemo(() => {
     let list = sector === 'Watchlist' ? ASSETS.filter(a => watchlist.includes(a.id))
       : sector === 'All' ? ASSETS : ASSETS.filter(a => a.sector === sector);
@@ -1463,15 +1791,31 @@ export default function Portfolio() {
   const hotMovers = useMemo(() => [...ASSETS].filter(a => prices[a.id])
     .sort((a, b) => Math.abs(prices[b.id].change) - Math.abs(prices[a.id].change)).slice(0, 5), [prices]);
 
-  const NEWS = useMemo(() => ({
-    Technology:    [{ title: 'AI chip demand drives tech rally', sentiment: 'up', time: '2h ago' }, { title: 'Big Tech earnings beat expectations', sentiment: 'up', time: '5h ago' }],
-    Finance:       [{ title: 'Banks report strong Q2 profits', sentiment: 'up', time: '3h ago' }, { title: 'Credit card spending rises 4%', sentiment: 'up', time: '6h ago' }],
-    Consumer:      [{ title: 'Retail sales surprise to the upside', sentiment: 'up', time: '4h ago' }, { title: 'EV demand softens as rates stay high', sentiment: 'down', time: '8h ago' }],
-    Energy:        [{ title: 'Oil climbs on OPEC supply cut rumours', sentiment: 'up', time: '1h ago' }, { title: 'Natural gas slides on warm weather', sentiment: 'down', time: '3h ago' }],
-    Healthcare:    [{ title: 'Drug approvals fuel healthcare gains', sentiment: 'up', time: '2h ago' }, { title: 'Insurance costs weigh on UNH outlook', sentiment: 'down', time: '5h ago' }],
-    'Broad Market':[{ title: 'S&P 500 sets new intraday high', sentiment: 'up', time: '1h ago' }, { title: 'VIX near 12-month low', sentiment: 'up', time: '4h ago' }],
-    Crypto:        [{ title: 'BTC surges on ETF inflow momentum', sentiment: 'up', time: '30m ago' }, { title: 'SEC weighs new crypto custody rules', sentiment: 'down', time: '3h ago' }],
-  }), []);
+  const NEWS = useMemo(() => {
+    const base = {
+      Technology:    [{ title: 'AI chip demand drives tech rally', sentiment: 'up', time: '2h ago' }, { title: 'Big Tech earnings beat expectations', sentiment: 'up', time: '5h ago' }],
+      Finance:       [{ title: 'Banks report strong Q2 profits', sentiment: 'up', time: '3h ago' }, { title: 'Credit card spending rises 4%', sentiment: 'up', time: '6h ago' }],
+      Consumer:      [{ title: 'Retail sales surprise to the upside', sentiment: 'up', time: '4h ago' }, { title: 'EV demand softens as rates stay high', sentiment: 'down', time: '8h ago' }],
+      Energy:        [{ title: 'Oil climbs on OPEC supply cut rumours', sentiment: 'up', time: '1h ago' }, { title: 'Natural gas slides on warm weather', sentiment: 'down', time: '3h ago' }],
+      Healthcare:    [{ title: 'Drug approvals fuel healthcare gains', sentiment: 'up', time: '2h ago' }, { title: 'Insurance costs weigh on UNH outlook', sentiment: 'down', time: '5h ago' }],
+      'Broad Market':[{ title: 'S&P 500 sets new intraday high', sentiment: 'up', time: '1h ago' }, { title: 'VIX near 12-month low', sentiment: 'up', time: '4h ago' }],
+      Crypto:        [{ title: 'BTC surges on ETF inflow momentum', sentiment: 'up', time: '30m ago' }, { title: 'SEC weighs new crypto custody rules', sentiment: 'down', time: '3h ago' }],
+    };
+    // Inject recession warning news
+    if (recessionPhase && RECESSION_NEWS[recessionPhase]) {
+      base['⚠️ Economic Outlook'] = RECESSION_NEWS[recessionPhase];
+    }
+    // Inject current sector rotation event
+    if (sectorEvent) {
+      const boomPct = Math.abs(((1 - sectorEvent.boomMult) * -100)).toFixed(0);
+      const crashPct = Math.abs(((1 - sectorEvent.crashMult) * 100)).toFixed(0);
+      base['📊 Sector Rotation'] = [
+        { title: sectorEvent.news, sentiment: 'up', time: 'Just now' },
+        { title: `${sectorEvent.boomSector} +${boomPct}% · ${sectorEvent.crashSector} −${crashPct}%`, sentiment: 'down', time: 'Just now' },
+      ];
+    }
+    return base;
+  }, [recessionPhase, sectorEvent]);
 
   if (!unlocked) {
     return (
@@ -1486,7 +1830,7 @@ export default function Portfolio() {
     );
   }
 
-  const tabs = [{ id: 'market', label: 'Market' }, { id: 'holdings', label: 'Holdings' }, { id: 'leaderboard', label: 'Rank' }];
+  const tabs = [{ id: 'market', label: 'Market' }, { id: 'holdings', label: 'Holdings' }, { id: 'research', label: 'Research' }, { id: 'leaderboard', label: 'Rank' }];
 
   return (
     <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto">
@@ -1522,10 +1866,29 @@ export default function Portfolio() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4 mb-3 text-xs text-muted-foreground">
-          <span>vs S&P 500: <span className={spyReturn >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>{spyReturn >= 0 ? '+' : ''}{spyReturn.toFixed(2)}%</span></span>
-          <span>Cash: <span className="text-foreground font-bold">${cash.toFixed(2)}</span></span>
+        <div className="flex items-center gap-3 mb-3 flex-wrap">
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-1.5 flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wide">Cash Available</span>
+            <span className="text-sm font-extrabold text-emerald-400">${cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>vs S&P: <span className={spyReturn >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>{spyReturn >= 0 ? '+' : ''}{spyReturn.toFixed(2)}%</span></span>
+            {myRank && <span>Rank: <span className="text-primary font-bold">#{myRank}</span></span>}
+            {leaderboard.length > 0 && (() => {
+              const totalPool = leaderboard.reduce((s, p) => s + p.value, 0) + totalValue;
+              const share = totalPool > 0 ? (totalValue / totalPool * 100).toFixed(1) : '0';
+              return <span>Market share: <span className="text-amber-400 font-bold">{share}%</span></span>;
+            })()}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mb-3 text-xs text-muted-foreground" style={{display:'none'}}>
+          <span>vs S&P: <span className={spyReturn >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>{spyReturn >= 0 ? '+' : ''}{spyReturn.toFixed(2)}%</span></span>
           {myRank && <span>Rank: <span className="text-primary font-bold">#{myRank}</span></span>}
+          {leaderboard.length > 0 && (() => {
+            const totalPool = leaderboard.reduce((s, p) => s + p.value, 0) + totalValue;
+            const share = totalPool > 0 ? (totalValue / totalPool * 100).toFixed(1) : '0';
+            return <span>Market share: <span className="text-amber-400 font-bold">{share}%</span></span>;
+          })()}
         </div>
 
         <div className="h-36 mt-2">
@@ -1563,6 +1926,16 @@ export default function Portfolio() {
               </button>
             </div>
 
+            {/* Sector filter */}
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-3 no-scrollbar">
+              {allSectors.map(s => (
+                <button key={s} onClick={() => setSector(s)}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-extrabold transition-all ${sector === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                  {s === 'Watchlist' ? `⭐ ${s}` : s}
+                </button>
+              ))}
+            </div>
+
             {/* Hot movers */}
             {!loading && hotMovers.length > 0 && (
               <div className="mb-4">
@@ -1586,16 +1959,6 @@ export default function Portfolio() {
                 </div>
               </div>
             )}
-
-            {/* Sector filter */}
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-3 no-scrollbar">
-              {allSectors.map(s => (
-                <button key={s} onClick={() => setSector(s)}
-                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-extrabold transition-all ${sector === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                  {s === 'Watchlist' ? `⭐ ${s}` : s}
-                </button>
-              ))}
-            </div>
 
             {/* Asset list */}
             {loading ? (
@@ -1728,7 +2091,49 @@ export default function Portfolio() {
               </div>
             </div>
 
-            {holdings.length === 0 ? (
+            {/* Asset Allocation Breakdown */}
+            {(holdings.length > 0 || (portfolio?.bondHoldings ?? []).length > 0) && (() => {
+              const sectorVals = {};
+              holdings.forEach(h => {
+                const a = ASSETS.find(x => x.id === h.assetId);
+                const v = (prices[h.assetId]?.price ?? h.avgCost) * h.shares;
+                const sec = a?.sector ?? 'Other';
+                sectorVals[sec] = (sectorVals[sec] ?? 0) + v;
+              });
+              const tot = cash + investedValue + bondValue;
+              const segs = [
+                { label: 'Cash', val: cash, color: '#10b981' },
+                ...Object.entries(sectorVals).map(([s, v]) => ({ label: s, val: v, color: SECTOR_COLORS[s] ?? '#64748b' })),
+                ...(bondValue > 0 ? [{ label: 'Bonds', val: bondValue, color: '#f59e0b' }] : []),
+              ].filter(s => s.val > 0.01);
+              if (tot <= 0) return null;
+              return (
+                <div className="bg-card border border-border rounded-2xl p-4 mb-4">
+                  <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-3">Asset Allocation</p>
+                  <div className="flex h-3 rounded-full overflow-hidden mb-3 gap-0.5">
+                    {segs.map((s, i) => (
+                      <div key={i} style={{ width: `${(s.val / tot) * 100}%`, backgroundColor: s.color, minWidth: '2px' }} className="rounded-sm" />
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    {segs.map((s, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
+                        <p className="text-[10px] text-muted-foreground flex-1 truncate">{s.label}</p>
+                        <p className="text-[10px] font-bold text-foreground">{((s.val / tot) * 100).toFixed(1)}%</p>
+                      </div>
+                    ))}
+                  </div>
+                  {cash / tot > 0.5 && (
+                    <p className="text-[10px] text-amber-400 font-bold mt-2 text-center">
+                      ⚠️ Over 50% in cash — inflation is eroding it. Consider investing.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {holdings.length === 0 && (portfolio?.bondHoldings ?? []).length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-4xl mb-3">💼</p>
                 <p className="font-extrabold text-foreground mb-1">No holdings yet</p>
@@ -1756,61 +2161,508 @@ export default function Portfolio() {
                     const atRet = ipo ? ((cur - ipo.ipoPrice) / ipo.ipoPrice) * 100 : null;
                     return (
                       <div key={h.assetId} className="bg-card border border-border rounded-2xl p-4">
-                        <div className="flex items-center gap-3 mb-2">
+                        {/* Row 1: asset info + sparkline */}
+                        <div className="flex items-center gap-3 mb-3">
                           <span className="text-xl">{asset.emoji}</span>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <p className="font-extrabold text-foreground text-sm">{asset.symbol} <span className="text-muted-foreground font-normal text-xs">{asset.name}</span></p>
-                              <p className="font-extrabold text-foreground">${value.toFixed(2)}</p>
-                            </div>
-                            <div className="flex items-center justify-between mt-0.5">
-                              <p className="text-xs text-muted-foreground">{h.shares.toFixed(6)} shares</p>
-                              <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                {up ? '+' : ''}${gain.toFixed(2)} ({up ? '+' : ''}{gainPct.toFixed(2)}%)
-                              </p>
-                            </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-extrabold text-foreground text-sm leading-tight">{asset.symbol} <span className="text-muted-foreground font-normal text-xs">{asset.name}</span></p>
+                            <p className="text-xs text-muted-foreground">{h.shares.toFixed(6)} sh · avg ${h.avgCost.toFixed(2)}</p>
+                          </div>
+                          <Sparkline points={pd?.points} positive={up} width={56} height={28} />
+                        </div>
+                        {/* Row 2: value + unrealized gain pill */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Value</p>
+                            <p className="text-lg font-extrabold text-foreground">${value.toFixed(2)}</p>
+                          </div>
+                          <div className={`flex flex-col items-end px-3 py-1.5 rounded-xl ${up ? 'bg-emerald-500/12' : 'bg-rose-500/12'}`}>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Unrealized</p>
+                            <p className={`text-base font-extrabold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {up ? '+' : ''}${gain.toFixed(2)}
+                            </p>
+                            <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {up ? '+' : ''}{gainPct.toFixed(2)}%
+                            </p>
                           </div>
                         </div>
+                        {/* Row 3: now price + ipo + trade */}
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="text-xs text-muted-foreground">Avg ${h.avgCost.toFixed(2)} · Now ${cur.toFixed(2)}</div>
-                            {atRet !== null && <div className="text-[10px] text-emerald-400 font-bold mt-0.5">{formatIPOReturn(atRet)} since IPO</div>}
+                            <span className="text-xs text-muted-foreground">Now </span>
+                            <span className="text-xs font-bold text-foreground">${cur.toFixed(2)}</span>
+                            {atRet !== null && <span className="text-[10px] text-emerald-400 font-bold ml-2">{formatIPOReturn(atRet)} IPO</span>}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Sparkline points={pd?.points} positive={up} width={44} height={20} />
-                            <button onClick={() => setTradeAsset(asset)}
-                              className="bg-muted text-foreground rounded-lg px-2.5 py-1 text-xs font-extrabold active:scale-95">Trade</button>
-                          </div>
+                          <button onClick={() => setTradeAsset(asset)}
+                            className="bg-primary text-primary-foreground rounded-lg px-3 py-1.5 text-xs font-extrabold active:scale-95">Trade</button>
                         </div>
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Bond Holdings */}
+                {(portfolio?.bondHoldings ?? []).length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">🏛️ Bond Holdings</p>
+                    <div className="space-y-2">
+                      {(portfolio.bondHoldings ?? []).filter(bh => bh.quantity > 0).map(bh => {
+                        const bond = BONDS.find(b => b.id === bh.bondId);
+                        if (!bond) return null;
+                        const curPrice = getBondPrice(bond, baseRate);
+                        const totalVal = curPrice * bh.quantity;
+                        const totalCost = bh.purchasePrice * bh.quantity;
+                        const gain = totalVal - totalCost;
+                        const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
+                        return (
+                          <div key={bh.bondId} className="bg-card border border-border rounded-2xl p-4">
+                            <div className="flex items-start gap-2 mb-3">
+                              <span className="text-xl">{bond.emoji}</span>
+                              <div className="flex-1">
+                                <p className="text-sm font-extrabold text-foreground">{bond.name}</p>
+                                <p className="text-xs text-muted-foreground">{bh.quantity}× bond · {bond.coupon}% annual coupon</p>
+                              </div>
+                              <div className={`text-right px-2.5 py-1.5 rounded-xl ${gain >= 0 ? 'bg-emerald-500/12' : 'bg-rose-500/12'}`}>
+                                <p className={`text-sm font-extrabold ${gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {gain >= 0 ? '+' : ''}${gain.toFixed(2)}
+                                </p>
+                                <p className={`text-[10px] font-bold ${gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {gainPct.toFixed(1)}%
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Market Value</p>
+                                <p className="text-base font-extrabold text-foreground">${totalVal.toFixed(0)}</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-[10px] text-muted-foreground">Rate</p>
+                                <p className="text-xs font-bold text-foreground">{baseRate.toFixed(2)}%</p>
+                                <p className="text-[10px] text-amber-400">rates ↑ → price ↓</p>
+                              </div>
+                              <button onClick={() => setBondTrade({ bond, mode: 'sell', qty: '1' })}
+                                className="bg-rose-500/15 text-rose-400 border border-rose-500/20 rounded-lg px-3 py-1.5 text-xs font-extrabold active:scale-95">
+                                Sell
+                              </button>
+                            </div>
+                            {bondTrade?.bond?.id === bond.id && bondTrade.mode === 'sell' && (
+                              <div className="mt-3 pt-3 border-t border-border">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <p className="text-xs text-muted-foreground flex-1">Qty (${curPrice.toFixed(0)}/bond)</p>
+                                  <div className="flex items-center gap-1">
+                                    <button onClick={() => setBondTrade(t => ({ ...t, qty: String(Math.max(1, parseInt(t.qty||'1') - 1)) }))} className="w-7 h-7 bg-muted rounded-lg text-foreground font-extrabold active:scale-95 text-sm">−</button>
+                                    <span className="w-8 text-center text-sm font-extrabold text-foreground">{bondTrade.qty}</span>
+                                    <button onClick={() => setBondTrade(t => ({ ...t, qty: String(Math.min(bh.quantity, parseInt(t.qty||'1') + 1)) }))} className="w-7 h-7 bg-muted rounded-lg text-foreground font-extrabold active:scale-95 text-sm">+</button>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button onClick={() => handleBondTrade(bond, 'sell', parseInt(bondTrade.qty)||1)} className="flex-1 bg-rose-500 text-white rounded-xl py-2 text-sm font-extrabold active:scale-95">
+                                    Sell ${(curPrice * (parseInt(bondTrade.qty)||1)).toFixed(0)}
+                                  </button>
+                                  <button onClick={() => setBondTrade(null)} className="px-4 bg-muted text-muted-foreground rounded-xl py-2 text-sm font-bold active:scale-95">Cancel</button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </>
             )}
+
+            {/* P&L Summary */}
+            {(() => {
+              const unrealizedLong  = holdings.reduce((sum, h) => {
+                const cur = prices[h.assetId]?.price ?? h.avgCost;
+                return sum + (cur - h.avgCost) * h.shares;
+              }, 0);
+              const unrealizedShort = shorts.reduce((sum, s) => {
+                const cur = prices[s.assetId]?.price ?? s.entryPrice;
+                return sum + (s.entryPrice - cur) * s.shares;
+              }, 0);
+              const trades = portfolio?.trades ?? [];
+              // Realized P&L: sell trades gain = (price - avgCost) * shares, cover trades gain = pnl stored implicitly via cash
+              // We approximate realized from trade pairs: for each sell, find the most recent buy's avgCost
+              // Simpler: track realized as cash delta from sells/covers vs buy cost
+              // Use trade history: sum sell proceeds - cost basis, sum cover proceeds - short cost
+              let realizedPnl = 0;
+              const costBasis = {};
+              trades.forEach(t => {
+                if (t.type === 'buy') {
+                  if (!costBasis[t.assetId]) costBasis[t.assetId] = { shares: 0, cost: 0 };
+                  costBasis[t.assetId].cost   = (costBasis[t.assetId].cost * costBasis[t.assetId].shares + t.price * t.shares) / (costBasis[t.assetId].shares + t.shares);
+                  costBasis[t.assetId].shares += t.shares;
+                } else if (t.type === 'sell') {
+                  const cb = costBasis[t.assetId];
+                  const avg = cb ? cb.cost : t.price;
+                  realizedPnl += (t.price - avg) * t.shares;
+                  if (cb) cb.shares = Math.max(0, cb.shares - t.shares);
+                }
+              });
+              const shortBasis = {};
+              trades.forEach(t => {
+                if (t.type === 'short') {
+                  if (!shortBasis[t.assetId]) shortBasis[t.assetId] = { shares: 0, cost: 0 };
+                  shortBasis[t.assetId].cost   = (shortBasis[t.assetId].cost * shortBasis[t.assetId].shares + t.price * t.shares) / (shortBasis[t.assetId].shares + t.shares);
+                  shortBasis[t.assetId].shares += t.shares;
+                } else if (t.type === 'cover') {
+                  const cb = shortBasis[t.assetId];
+                  const entry = cb ? cb.cost : t.price;
+                  realizedPnl += (entry - t.price) * t.shares;
+                  if (cb) cb.shares = Math.max(0, cb.shares - t.shares);
+                }
+              });
+              const totalUnrealized = unrealizedLong + unrealizedShort;
+              const totalPnl        = realizedPnl + totalUnrealized;
+              const rows = [
+                { label: 'Unrealized (Stocks)', val: unrealizedLong,  show: holdings.length > 0 },
+                { label: 'Unrealized (Shorts)',  val: unrealizedShort, show: shorts.length > 0 },
+                { label: 'Realized P&L',         val: realizedPnl,     show: trades.some(t => t.type === 'sell' || t.type === 'cover') },
+              ].filter(r => r.show);
+              if (rows.length === 0 && realizedPnl === 0) return null;
+              return (
+                <div className="mt-6">
+                  <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">Profit & Loss</p>
+                  <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                    {rows.map((r, i) => (
+                      <div key={i} className={`flex items-center justify-between px-4 py-3 ${i < rows.length - 1 ? 'border-b border-border' : ''}`}>
+                        <p className="text-xs text-muted-foreground">{r.label}</p>
+                        <p className={`text-sm font-extrabold ${r.val >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {r.val >= 0 ? '+' : ''}${Math.abs(r.val).toFixed(2)}
+                        </p>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between px-4 py-3 bg-muted/50 border-t border-border">
+                      <p className="text-xs font-extrabold text-foreground">Total P&L</p>
+                      <p className={`text-base font-extrabold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {totalPnl >= 0 ? '+' : ''}${Math.abs(totalPnl).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {(portfolio?.trades?.length ?? 0) > 0 && (
               <div className="mt-6">
                 <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">Trade History</p>
                 <div className="space-y-1.5">
-                  {[...(portfolio?.trades ?? [])].reverse().slice(0, 10).map((t, i) => {
-                    const asset = ASSETS.find(a => a.id === t.assetId);
-                    return (
-                      <div key={i} className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-2.5">
-                        <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${t.type === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>{t.type.toUpperCase()}</span>
-                        <span className="text-sm">{asset?.emoji}</span>
-                        <div className="flex-1">
-                          <p className="text-xs font-bold text-foreground">{asset?.symbol} · {t.shares.toFixed(4)} shares</p>
-                          <p className="text-[10px] text-muted-foreground">@ ${t.price.toFixed(2)} · {new Date(t.ts).toLocaleDateString()}</p>
+                  {(() => {
+                    const allTrades = portfolio?.trades ?? [];
+                    // Pre-compute rolling avg cost for P&L display
+                    const cb = {}, sb = {};
+                    const withPnl = allTrades.map(t => {
+                      let pnl = null;
+                      if (t.type === 'buy') {
+                        if (!cb[t.assetId]) cb[t.assetId] = { shares: 0, cost: 0 };
+                        cb[t.assetId].cost   = (cb[t.assetId].cost * cb[t.assetId].shares + t.price * t.shares) / (cb[t.assetId].shares + t.shares);
+                        cb[t.assetId].shares += t.shares;
+                      } else if (t.type === 'sell') {
+                        const avg = cb[t.assetId]?.cost ?? t.price;
+                        pnl = (t.price - avg) * t.shares;
+                        if (cb[t.assetId]) cb[t.assetId].shares = Math.max(0, cb[t.assetId].shares - t.shares);
+                      } else if (t.type === 'short') {
+                        if (!sb[t.assetId]) sb[t.assetId] = { shares: 0, cost: 0 };
+                        sb[t.assetId].cost   = (sb[t.assetId].cost * sb[t.assetId].shares + t.price * t.shares) / (sb[t.assetId].shares + t.shares);
+                        sb[t.assetId].shares += t.shares;
+                      } else if (t.type === 'cover') {
+                        const entry = sb[t.assetId]?.cost ?? t.price;
+                        pnl = (entry - t.price) * t.shares;
+                        if (sb[t.assetId]) sb[t.assetId].shares = Math.max(0, sb[t.assetId].shares - t.shares);
+                      }
+                      return { ...t, pnl };
+                    });
+                    const typeStyle = { buy: 'bg-emerald-500/20 text-emerald-400', sell: 'bg-rose-500/20 text-rose-400', short: 'bg-violet-500/20 text-violet-400', cover: 'bg-sky-500/20 text-sky-400' };
+                    return [...withPnl].reverse().slice(0, 10).map((t, i) => {
+                      const asset = ASSETS.find(a => a.id === t.assetId);
+                      return (
+                        <div key={i} className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-2.5">
+                          <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${typeStyle[t.type] ?? typeStyle.buy}`}>{t.type.toUpperCase()}</span>
+                          <span className="text-sm">{asset?.emoji}</span>
+                          <div className="flex-1">
+                            <p className="text-xs font-bold text-foreground">{asset?.symbol} · {t.shares.toFixed(4)} shares</p>
+                            <p className="text-[10px] text-muted-foreground">@ ${t.price.toFixed(2)} · {new Date(t.ts).toLocaleDateString()}</p>
+                          </div>
+                          {t.pnl !== null && (
+                            <span className={`text-xs font-extrabold ${t.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {t.pnl >= 0 ? '+' : ''}${Math.abs(t.pnl).toFixed(2)}
+                            </span>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             )}
           </motion.div>
         )}
+
+        {/* ─── RESEARCH ─── */}
+        {tab === 'research' && (() => {
+          const filteredSearch = researchQuery.trim().length >= 1
+            ? ASSETS.filter(a =>
+                a.symbol.toLowerCase().includes(researchQuery.toLowerCase()) ||
+                a.name.toLowerCase().includes(researchQuery.toLowerCase()))
+              .slice(0, 8)
+            : [];
+          const ra = researchAsset;
+          const raPd = ra ? prices[ra.id] : null;
+          const raDiv = ra ? DIVIDENDS[ra.symbol] ?? DIVIDENDS[ra.id] : null;
+          const raEarnings = ra ? getEarningsHistory(ra.id) : [];
+          const guidanceIcon = g => g === 'positive' ? '🟢' : g === 'neutral' ? '🟡' : '🔴';
+          const guidanceLabel = g => g === 'positive' ? 'Positive' : g === 'neutral' ? 'Neutral' : 'Negative';
+          return (
+            <motion.div key="research" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pt-4">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex-1 flex items-center gap-2 bg-muted rounded-2xl px-3 py-2.5">
+                  <span className="text-muted-foreground text-sm">🔍</span>
+                  <input
+                    value={researchQuery}
+                    onChange={e => setResearchQuery(e.target.value)}
+                    placeholder="Search stocks, ETFs…"
+                    className="bg-transparent flex-1 text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                  />
+                  {researchQuery && <button onClick={() => { setResearchQuery(''); setResearchAsset(null); }} className="text-muted-foreground text-xs">✕</button>}
+                </div>
+              </div>
+
+              {/* Search results dropdown */}
+              {filteredSearch.length > 0 && !ra && (
+                <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+                  {filteredSearch.map((a, i) => {
+                    const pd = prices[a.id];
+                    const up = (pd?.change ?? 0) >= 0;
+                    return (
+                      <button key={a.id} onClick={() => { setResearchAsset(a); setResearchQuery(''); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 active:bg-muted transition-all ${i > 0 ? 'border-t border-border' : ''}`}>
+                        <span className="text-lg">{a.emoji}</span>
+                        <div className="flex-1 text-left">
+                          <p className="text-sm font-extrabold text-foreground">{a.symbol}</p>
+                          <p className="text-xs text-muted-foreground">{a.name}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-foreground">${pd?.price?.toFixed(2) ?? '—'}</p>
+                          <p className={`text-xs font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{up ? '+' : ''}{pd?.change?.toFixed(2) ?? '—'}%</p>
+                        </div>
+                        {DIVIDENDS[a.symbol] || DIVIDENDS[a.id] ? <span className="text-[10px] bg-amber-400/20 text-amber-400 rounded px-1.5 py-0.5 font-bold">DIV</span> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Placeholder when nothing searched */}
+              {!ra && researchQuery.trim().length === 0 && (
+                <div>
+                  <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-3">Dividend Payers</p>
+                  <div className="space-y-1.5">
+                    {ASSETS.filter(a => DIVIDENDS[a.symbol] || DIVIDENDS[a.id]).slice(0, 6).map(a => {
+                      const div = DIVIDENDS[a.symbol] ?? DIVIDENDS[a.id];
+                      const pd  = prices[a.id];
+                      const up  = (pd?.change ?? 0) >= 0;
+                      return (
+                        <button key={a.id} onClick={() => setResearchAsset(a)}
+                          className="w-full flex items-center gap-3 bg-card border border-border rounded-2xl px-4 py-3 active:scale-[0.99] transition-all">
+                          <span className="text-lg">{a.emoji}</span>
+                          <div className="flex-1 text-left">
+                            <p className="text-sm font-extrabold text-foreground">{a.symbol} <span className="text-muted-foreground font-normal text-xs">{a.name}</span></p>
+                            <p className="text-xs text-amber-400 font-bold">Yield {div.label} · Quarterly</p>
+                          </div>
+                          <p className={`text-sm font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{up ? '+' : ''}{pd?.change?.toFixed(2) ?? '—'}%</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Bonds section */}
+                  <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-3 mt-5">🏛️ Bond Market</p>
+                  <div className="bg-muted/40 border border-border rounded-2xl p-3 mb-3 text-xs text-muted-foreground">
+                    Bonds pay a fixed <span className="text-foreground font-bold">coupon</span> and return face value at maturity. When interest rates rise, bond prices fall — and vice versa. Government bonds are safest; high-yield bonds pay more but carry default risk.
+                  </div>
+                  <div className="space-y-2">
+                    {BONDS.map(b => (
+                      <div key={b.id} className="bg-card border border-border rounded-2xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{b.emoji}</span>
+                            <div>
+                              <p className="text-sm font-extrabold text-foreground">{b.name}</p>
+                              <p className="text-[10px] text-muted-foreground">{b.type === 'government' ? 'US Government' : b.type === 'corporate' ? 'Corporate' : 'High-Yield'} · Matures {b.maturity}</p>
+                            </div>
+                          </div>
+                          <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full bg-muted ${BOND_RATING_COLOR[b.rating] ?? 'text-foreground'}`}>{b.rating}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mb-2">
+                          <div className="bg-muted rounded-xl p-2 text-center">
+                            <p className="text-[10px] text-muted-foreground">Coupon</p>
+                            <p className="text-xs font-extrabold text-amber-400">{b.coupon}%</p>
+                          </div>
+                          <div className="bg-muted rounded-xl p-2 text-center">
+                            <p className="text-[10px] text-muted-foreground">YTM</p>
+                            <p className="text-xs font-extrabold text-foreground">{b.yieldTo}%</p>
+                          </div>
+                          <div className="bg-muted rounded-xl p-2 text-center">
+                            <p className="text-[10px] text-muted-foreground">Face Value</p>
+                            <p className="text-xs font-extrabold text-foreground">${b.faceValue}</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mb-3">{b.description}</p>
+                        <div className="flex items-center justify-between mb-2 text-[10px] text-muted-foreground">
+                          <span>Rate: <span className="text-foreground font-bold">{baseRate.toFixed(2)}%</span></span>
+                          <span>Price: <span className={`font-bold ${getBondPrice(b, baseRate) >= b.faceValue ? 'text-emerald-400' : 'text-rose-400'}`}>${getBondPrice(b, baseRate).toFixed(0)}</span></span>
+                          {(portfolio?.bondHoldings ?? []).find(bh => bh.bondId === b.id) && (
+                            <span className="text-primary font-bold">Held: {(portfolio.bondHoldings.find(bh => bh.bondId === b.id)?.quantity ?? 0)}×</span>
+                          )}
+                        </div>
+                        {bondTrade?.bond?.id === b.id ? (
+                          <div className="border-t border-border pt-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs text-muted-foreground">Quantity</p>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => setBondTrade(t => ({ ...t, qty: String(Math.max(1, parseInt(t.qty||'1') - 1)) }))} className="w-7 h-7 bg-muted rounded-lg text-foreground font-extrabold active:scale-95 text-sm">−</button>
+                                <span className="w-8 text-center text-sm font-extrabold text-foreground">{bondTrade.qty}</span>
+                                <button onClick={() => setBondTrade(t => ({ ...t, qty: String(parseInt(t.qty||'1') + 1) }))} className="w-7 h-7 bg-muted rounded-lg text-foreground font-extrabold active:scale-95 text-sm">+</button>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between mb-3">
+                              <p className="text-xs text-muted-foreground">Total cost</p>
+                              <p className="text-sm font-extrabold text-foreground">${(getBondPrice(b, baseRate) * (parseInt(bondTrade.qty)||1)).toFixed(0)}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleBondTrade(b, 'buy', parseInt(bondTrade.qty)||1)}
+                                className="flex-1 bg-primary text-primary-foreground rounded-xl py-2 text-sm font-extrabold active:scale-95">
+                                Buy Bond
+                              </button>
+                              <button onClick={() => setBondTrade(null)} className="px-4 bg-muted text-muted-foreground rounded-xl py-2 text-sm font-bold active:scale-95">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => setBondTrade({ bond: b, mode: 'buy', qty: '1' })}
+                            className="w-full bg-primary/10 text-primary border border-primary/20 rounded-xl py-2 text-xs font-extrabold active:scale-95">
+                            Buy Bond — ${getBondPrice(b, baseRate).toFixed(0)} / bond
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Stock detail */}
+              {ra && (
+                <div>
+                  <button onClick={() => setResearchAsset(null)} className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4 active:opacity-70">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back to search
+                  </button>
+
+                  {/* Header card */}
+                  <div className="bg-card border border-border rounded-2xl p-4 mb-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="text-3xl">{ra.emoji}</span>
+                      <div className="flex-1">
+                        <p className="text-lg font-extrabold text-foreground">{ra.symbol}</p>
+                        <p className="text-xs text-muted-foreground">{ra.name} · {ra.sector}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-extrabold text-foreground">${raPd?.price?.toFixed(2) ?? '—'}</p>
+                        <p className={`text-sm font-bold ${(raPd?.change ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {(raPd?.change ?? 0) >= 0 ? '+' : ''}{raPd?.change?.toFixed(2) ?? '—'}%
+                        </p>
+                      </div>
+                    </div>
+                    <Sparkline points={raPd?.points} positive={(raPd?.change ?? 0) >= 0} width={300} height={48} />
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => setTradeAsset(ra)}
+                        className="flex-1 bg-primary text-primary-foreground rounded-xl py-2 text-sm font-extrabold active:scale-95">
+                        Trade {ra.symbol}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Dividend card */}
+                  {raDiv && (
+                    <div className="bg-card border border-border rounded-2xl p-4 mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide">Dividends</p>
+                          <p className="text-lg font-extrabold text-amber-400">{raDiv.label} yield</p>
+                          <p className="text-xs text-muted-foreground">Paid quarterly · ~every 2 min in-game</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] text-muted-foreground mb-1">Per share / qtr</p>
+                          <p className="text-sm font-extrabold text-foreground">
+                            ${raPd?.price ? ((raPd.price * raDiv.annualYield) / 4).toFixed(4) : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between bg-muted rounded-xl px-4 py-3">
+                        <div>
+                          <p className="text-xs font-extrabold text-foreground">Auto-Reinvest (DRIP)</p>
+                          <p className="text-xs text-muted-foreground">Dividends buy more shares automatically</p>
+                        </div>
+                        <button onClick={() => toggleDrip(ra.symbol)}
+                          className={`relative w-11 h-6 rounded-full transition-all ${drip[ra.symbol] ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}>
+                          <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${drip[ra.symbol] ? 'left-6' : 'left-1'}`} />
+                        </button>
+                      </div>
+                      {drip[ra.symbol] && (
+                        <p className="text-[10px] text-emerald-400 mt-2 text-center font-bold">✅ DRIP enabled — dividends will buy more {ra.symbol} shares</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Earnings history */}
+                  {ra.type !== 'crypto' && (
+                    <div className="mb-4">
+                      <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide mb-2">Earnings History</p>
+                      <div className="space-y-2">
+                        {[...raEarnings].reverse().map((rpt, i) => (
+                          <div key={i} className={`bg-card border rounded-2xl p-4 ${rpt.beat ? 'border-emerald-500/30' : 'border-rose-500/30'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-extrabold text-foreground">{rpt.quarter}</span>
+                              <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${rpt.beat ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                                {rpt.beat ? '✅ BEAT' : '❌ MISS'} {rpt.surprisePct > 0 ? '+' : ''}{rpt.surprisePct}%
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                              <div className="bg-muted rounded-xl p-2.5">
+                                <p className="text-[10px] text-muted-foreground font-bold mb-0.5">Revenue</p>
+                                <p className="text-xs font-extrabold text-foreground">${rpt.revActual}B</p>
+                                <p className="text-[10px] text-muted-foreground">est ${rpt.revEst}B</p>
+                              </div>
+                              <div className="bg-muted rounded-xl p-2.5">
+                                <p className="text-[10px] text-muted-foreground font-bold mb-0.5">EPS</p>
+                                <p className="text-xs font-extrabold text-foreground">${rpt.epsActual}</p>
+                                <p className="text-[10px] text-muted-foreground">est ${rpt.epsEst}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span>{guidanceIcon(rpt.guidance)}</span>
+                              <span className="text-[10px] text-muted-foreground">Guidance: <span className="font-bold text-foreground">{guidanceLabel(rpt.guidance)}</span></span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground text-center mt-2">New earnings auto-fire for your held stocks every ~60–90 sec</p>
+                    </div>
+                  )}
+
+                  {ra.type === 'crypto' && (
+                    <div className="bg-muted/40 border border-border rounded-2xl p-4 text-center">
+                      <p className="text-2xl mb-2">₿</p>
+                      <p className="text-sm font-bold text-foreground">Crypto doesn't report earnings</p>
+                      <p className="text-xs text-muted-foreground mt-1">Crypto is driven by sentiment, adoption, and macro trends — not quarterly reports or dividends.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          );
+        })()}
 
         {/* ─── LEADERBOARD ─── */}
         {tab === 'leaderboard' && (
@@ -1910,6 +2762,13 @@ export default function Portfolio() {
 
       <AnimatePresence>
         {showIntro && <SectionIntro section="portfolio" onDismiss={dismissIntro} />}
+      </AnimatePresence>
+
+      {/* Earnings center-screen modal */}
+      <AnimatePresence>
+        {earningsModal && (
+          <EarningsModal data={earningsModal} onClose={() => setEarningsModal(null)} />
+        )}
       </AnimatePresence>
     </div>
   );

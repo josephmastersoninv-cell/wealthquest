@@ -1,23 +1,12 @@
-const SB_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+import { createClient } from '@supabase/supabase-js';
 
-export const isConfigured = SB_URL.length > 0 && SB_KEY.length > 0;
+const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL      ?? '';
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
-export async function sbFetch(path, options = {}) {
-  const res = await fetch(`${SB_URL}/rest/v1${path}`, {
-    ...options,
-    headers: {
-      apikey: SB_KEY,
-      Authorization: `Bearer ${SB_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
-      ...(options.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Supabase ${res.status}: ${text}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : [];
-}
+export const isConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON);
+
+export const supabase = isConfigured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON, {
+      auth: { persistSession: true, autoRefreshToken: true },
+    })
+  : null;

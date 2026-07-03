@@ -233,7 +233,13 @@ export function generateExamQuestions(count = 30) {
     },
   ];
 
-  questions.push(...scenarioQuestions);
+  // Shuffle each scenario question's options so the correct answer isn't always in the same position
+  const shuffledScenarios = scenarioQuestions.map(q => {
+    const correctAnswer = q.options[q.correct];
+    const opts = shuffleArray([...q.options]);
+    return { ...q, options: opts, correct: opts.indexOf(correctAnswer) };
+  });
+  questions.push(...shuffledScenarios);
 
   const shuffled = shuffleArray(questions);
   return shuffled.slice(0, Math.min(count, shuffled.length));
