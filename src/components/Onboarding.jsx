@@ -51,7 +51,7 @@ export default function Onboarding({ onComplete }) {
         <div className="flex flex-col items-center text-center px-4">
           <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.1 }}
             className="text-7xl mb-6">💰</motion.div>
-          <h1 className="text-3xl font-extrabold text-foreground mb-3">Welcome to<br />WealthQuest</h1>
+          <h1 className="text-3xl font-extrabold text-foreground mb-3">Welcome to<br />Monelingo</h1>
           <p className="text-muted-foreground text-sm leading-relaxed mb-8">
             Learn investing, build a portfolio, climb the leaderboard. The financial literacy game that actually teaches you something.
           </p>

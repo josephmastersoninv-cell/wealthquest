@@ -38,7 +38,7 @@ export default function Pro() {
         </Link>
         <div className="relative text-center">
           <div className="text-5xl mb-3">💎</div>
-          <h1 className="text-3xl font-black mb-2">WealthQuest Pro</h1>
+          <h1 className="text-3xl font-black mb-2">Monelingo Pro</h1>
           <p className="text-white/80 text-sm leading-relaxed">Unlock your full financial education potential. No limits.</p>
         </div>
       </div>
@@ -112,7 +112,7 @@ export default function Pro() {
         <div className="bg-gradient-to-br from-primary/10 to-fuchsia-500/10 rounded-3xl p-5 mb-6 border border-primary/20">
           <p className="text-xs font-extrabold uppercase tracking-wide text-primary mb-3">What learners say</p>
           {[
-            { text: '"I passed my CFA Level 1 prep using WealthQuest Pro. The spaced repetition is unreal."', name: 'Aoife M., Dublin' },
+            { text: '"I passed my CFA Level 1 prep using Monelingo Pro. The spaced repetition is unreal."', name: 'Aoife M., Dublin' },
             { text: '"Best €5/month I spend. Learned more in 2 weeks than a semester of finance class."', name: 'Conor B., Cork' },
           ].map((r, i) => (
             <div key={i} className={i > 0 ? 'mt-3 pt-3 border-t border-primary/10' : ''}>

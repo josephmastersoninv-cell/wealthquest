@@ -73,7 +73,7 @@ export default function Home() {
       {/* Header */}
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-3xl font-extrabold text-foreground">WealthQuest</h1>
+          <h1 className="text-3xl font-extrabold text-foreground">Monelingo</h1>
           <p className="text-sm text-muted-foreground">Financial literacy, gamified.</p>
         </div>
         <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-extrabold ${level.bg} ${level.color}`}>

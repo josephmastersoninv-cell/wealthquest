@@ -329,12 +329,103 @@ const ASSET_VOL = {
   GLD: 0.003, SLV: 0.004, TLT: 0.003, XLE: 0.004, XLF: 0.003, XLV: 0.002, SOXX: 0.004,
 };
 
+// ─── Bonds ────────────────────────────────────────────────────────────────────
+// Tradeable via the existing Trade modal (as ETFs/stocks); this is reference data for Research tab
+export const BONDS = [
+  // US Treasuries
+  { id: 'UST2Y',  name: '2-Year Treasury',   symbol: 'UST2Y',  coupon: 4.85, maturity: '2026',  rating: 'AAA', type: 'government', emoji: '🏛️', assetId: 'TLT', yieldTo: 4.82, faceValue: 1000, description: 'Short-term US government bond. Very safe, lower yield.' },
+  { id: 'UST10Y', name: '10-Year Treasury',  symbol: 'UST10Y', coupon: 4.20, maturity: '2034',  rating: 'AAA', type: 'government', emoji: '🏛️', assetId: 'TLT', yieldTo: 4.18, faceValue: 1000, description: 'Benchmark US bond. Drives mortgage rates and stock valuations.' },
+  { id: 'UST30Y', name: '30-Year Treasury',  symbol: 'UST30Y', coupon: 4.35, maturity: '2054',  rating: 'AAA', type: 'government', emoji: '🏛️', assetId: 'TLT', yieldTo: 4.32, faceValue: 1000, description: 'Long-term government bond. Higher duration risk but steady income.' },
+  // Investment-grade corporate
+  { id: 'AAPL4',  name: 'Apple 4.65% 2030',  symbol: 'AAPL4',  coupon: 4.65, maturity: '2030', rating: 'AAA', type: 'corporate',   emoji: '🍎', assetId: 'AAPL', yieldTo: 4.70, faceValue: 1000, description: 'Apple corporate bond. Excellent credit rating, slight yield premium over Treasuries.' },
+  { id: 'MSFT5',  name: 'MSFT 5.00% 2033',  symbol: 'MSFT5',  coupon: 5.00, maturity: '2033', rating: 'AAA', type: 'corporate',   emoji: '🪟', assetId: 'MSFT', yieldTo: 5.05, faceValue: 1000, description: 'Microsoft bond. Strong balance sheet, very low default risk.' },
+  { id: 'JPM5',   name: 'JPM 5.30% 2031',   symbol: 'JPM5',   coupon: 5.30, maturity: '2031', rating: 'A',   type: 'corporate',   emoji: '🏦', assetId: 'JPM',  yieldTo: 5.35, faceValue: 1000, description: 'JPMorgan Chase bond. Investment grade, higher yield than tech.' },
+  // High yield
+  { id: 'FORD7',  name: 'Ford 7.45% 2031',  symbol: 'FORD7',  coupon: 7.45, maturity: '2031', rating: 'BB',  type: 'high-yield',  emoji: '🚗', assetId: 'SPY',  yieldTo: 7.60, faceValue: 1000, description: 'Ford Motor junk bond. High coupon compensates for higher default risk.' },
+  { id: 'AMC9',   name: 'AMC 9.00% 2028',   symbol: 'AMC9',   coupon: 9.00, maturity: '2028', rating: 'CCC', type: 'high-yield',  emoji: '🎬', assetId: 'SPY',  yieldTo: 9.80, faceValue: 1000, description: 'Distressed corporate bond. Very high yield, significant default risk.' },
+];
+
+export const BOND_RATING_COLOR = { AAA: 'text-emerald-400', AA: 'text-emerald-400', A: 'text-sky-400', BBB: 'text-amber-400', BB: 'text-orange-400', B: 'text-rose-400', CCC: 'text-rose-500' };
+
+// ─── Dividends ────────────────────────────────────────────────────────────────
+// annualYield as decimal (e.g. 0.03 = 3%), all pay quarterly
+export const DIVIDENDS = {
+  AAPL: { annualYield: 0.0052, label: '0.52%' },
+  MSFT: { annualYield: 0.0072, label: '0.72%' },
+  JNJ:  { annualYield: 0.031,  label: '3.10%' },
+  XOM:  { annualYield: 0.035,  label: '3.50%' },
+  CVX:  { annualYield: 0.042,  label: '4.20%' },
+  JPM:  { annualYield: 0.025,  label: '2.50%' },
+  V:    { annualYield: 0.008,  label: '0.80%' },
+  MA:   { annualYield: 0.006,  label: '0.60%' },
+  BAC:  { annualYield: 0.028,  label: '2.80%' },
+  WMT:  { annualYield: 0.012,  label: '1.20%' },
+  MCD:  { annualYield: 0.021,  label: '2.10%' },
+  T:    { annualYield: 0.065,  label: '6.50%' },
+  VZ:   { annualYield: 0.065,  label: '6.50%' },
+  PFE:  { annualYield: 0.056,  label: '5.60%' },
+  ABBV: { annualYield: 0.038,  label: '3.80%' },
+  MRK:  { annualYield: 0.026,  label: '2.60%' },
+  UNH:  { annualYield: 0.015,  label: '1.50%' },
+  CAT:  { annualYield: 0.015,  label: '1.50%' },
+  LMT:  { annualYield: 0.028,  label: '2.80%' },
+  UPS:  { annualYield: 0.045,  label: '4.50%' },
+  SPY:  { annualYield: 0.013,  label: '1.30%' },
+  QQQ:  { annualYield: 0.007,  label: '0.70%' },
+  VTI:  { annualYield: 0.014,  label: '1.40%' },
+  TLT:  { annualYield: 0.040,  label: '4.00%' },
+  BLK:  { annualYield: 0.025,  label: '2.50%' },
+  NEE:  { annualYield: 0.030,  label: '3.00%' },
+  NEM:  { annualYield: 0.018,  label: '1.80%' },
+  AMT:  { annualYield: 0.030,  label: '3.00%' },
+  COST: { annualYield: 0.006,  label: '0.60%' },
+  HD:   { annualYield: 0.023,  label: '2.30%' },
+  GE:   { annualYield: 0.003,  label: '0.30%' },
+  AXP:  { annualYield: 0.012,  label: '1.20%' },
+  GS:   { annualYield: 0.024,  label: '2.40%' },
+  C:    { annualYield: 0.032,  label: '3.20%' },
+  FCX:  { annualYield: 0.016,  label: '1.60%' },
+  NKE:  { annualYield: 0.019,  label: '1.90%' },
+  SBUX: { annualYield: 0.025,  label: '2.50%' },
+  QCOM: { annualYield: 0.020,  label: '2.00%' },
+  INTC: { annualYield: 0.010,  label: '1.00%' },
+};
+
+// ─── Earnings reports (seeded, deterministic) ─────────────────────────────────
+const QUARTERS = ['Q1 2024', 'Q2 2024', 'Q3 2024', 'Q4 2024'];
+const GUIDANCE = ['positive', 'positive', 'neutral', 'neutral', 'negative'];
+
+function mkSeed(id) {
+  let s = [...id].reduce((a, c) => a + c.charCodeAt(0) * 31, 0);
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xffffffff; };
+}
+
+export function getEarningsHistory(assetId) {
+  const rand = mkSeed(assetId);
+  return QUARTERS.map(q => {
+    const beat       = rand() > 0.35;
+    const surprisePct = beat ? rand() * 8 + 0.5 : -(rand() * 6 + 0.5);
+    const epsEst     = +(0.8 + rand() * 5).toFixed(2);
+    const epsActual  = +(epsEst * (1 + surprisePct / 100)).toFixed(2);
+    const revEst     = +(5 + rand() * 95).toFixed(1);    // $B, normalized
+    const revActual  = +(revEst * (1 + (beat ? rand() * 0.07 : -rand() * 0.04))).toFixed(1);
+    const guidance   = GUIDANCE[Math.floor(rand() * GUIDANCE.length)];
+    return { quarter: q, beat, surprisePct: +surprisePct.toFixed(1), epsEst, epsActual, revEst, revActual, guidance };
+  });
+}
+
+// Price multiplier when earnings event fires (shock applied to current price)
+export function earningsShockMultiplier(beat, surprisePct) {
+  const mag = Math.min(Math.abs(surprisePct) * 0.9, 14) / 100;
+  return beat ? 1 + mag : 1 - mag;
+}
+
 // Simulate one price tick at 5× speed — call this on an interval during market hours
 export function simulatePriceTick(prices, multiplier = 5) {
   const next = {};
   Object.entries(prices).forEach(([id, pd]) => {
     const vol = (ASSET_VOL[id] ?? 0.004) * multiplier;
-    const move = (Math.random() - 0.488) * vol; // 0.488 gives tiny upward drift
+    const move = (Math.random() - 0.45) * vol; // 0.45 bias → ~55% of ticks are positive
     const base = pd.basePrice ?? pd.price;
     const newPrice = Math.max(pd.price * (1 + move), base * 0.25);
     const points = [...(pd.points?.slice(-49) ?? []), newPrice];
@@ -426,6 +517,50 @@ export function generateAllTimeCurve(assetId, currentPrice, n = 60) {
   pts[n - 1] = currentPrice;
   return pts;
 }
+
+// ─── Sector Rotation Events ───────────────────────────────────────────────────
+export const SECTOR_ROTATION_EVENTS = [
+  { name: 'Oil Shock',       crashSector: 'Technology', boomSector: 'Energy',        crashMult: 0.88, boomMult: 1.13, news: 'Surprise OPEC+ cut drives oil spike — Energy surges, Tech sector sold off' },
+  { name: 'Tech Rally',      crashSector: 'Energy',     boomSector: 'Technology',    crashMult: 0.91, boomMult: 1.10, news: 'AI spending boom accelerates — Tech rallies hard, Energy fades on demand fears' },
+  { name: 'Rate Shock',      crashSector: 'Finance',    boomSector: 'Healthcare',    crashMult: 0.90, boomMult: 1.07, news: 'Surprise rate hike hammers bank stocks — defensive Healthcare holds firm' },
+  { name: 'Safe Haven',      crashSector: 'Consumer',   boomSector: 'Materials',     crashMult: 0.91, boomMult: 1.08, news: 'Consumer confidence collapses — commodity stocks surge on supply fears' },
+  { name: 'Pharma Surge',    crashSector: 'Industrials',boomSector: 'Healthcare',    crashMult: 0.92, boomMult: 1.12, news: 'FDA approves blockbuster drug — Healthcare soars, industrial data disappoints' },
+  { name: 'Growth Rotation', crashSector: 'Technology', boomSector: 'Finance',       crashMult: 0.93, boomMult: 1.09, news: 'Rate cut expectations drive rotation — banks rally as growth stocks cool' },
+  { name: 'Telecom Surge',   crashSector: 'Energy',     boomSector: 'Communication', crashMult: 0.92, boomMult: 1.08, news: 'Spectrum auction sparks Communication rally; oil slides on global demand' },
+];
+
+// Bond price model: when interest rates rise, bond prices fall (duration effect)
+export function getBondPrice(bond, baseRate) {
+  if (!bond) return 0;
+  const maturityYear  = parseInt(bond.maturity ?? '2030');
+  const duration      = Math.min(Math.max(maturityYear - 2024, 1), 30) * 0.9;
+  const rateDiff      = baseRate - bond.yieldTo;
+  const modifier      = -rateDiff * duration * 0.01;
+  return Math.max(bond.faceValue * (1 + modifier), bond.faceValue * 0.5);
+}
+
+// Recession news shown in Market tab 3→1 days before and on the day
+export const RECESSION_NEWS = {
+  warning3: [
+    { title: 'Fed signals concern over slowing GDP growth', sentiment: 'down', time: '2h ago' },
+    { title: 'Yield curve flattens — economists on watch', sentiment: 'down', time: '5h ago' },
+  ],
+  warning2: [
+    { title: '⚠️ Yield curve inverts — strong recession signal', sentiment: 'down', time: '1h ago' },
+    { title: 'Manufacturing PMI falls below 50 for third month', sentiment: 'down', time: '3h ago' },
+    { title: 'Unemployment claims rise unexpectedly', sentiment: 'down', time: '6h ago' },
+  ],
+  warning1: [
+    { title: '🚨 GDP contracts 0.4% — technical recession confirmed', sentiment: 'down', time: '30m ago' },
+    { title: 'Markets brace for broad selloff — VIX spikes to 38', sentiment: 'down', time: '1h ago' },
+    { title: 'Federal Reserve holds emergency meeting', sentiment: 'down', time: '2h ago' },
+  ],
+  active: [
+    { title: '🔴 RECESSION: Markets in freefall — all sectors lower', sentiment: 'down', time: 'Now' },
+    { title: 'Bonds and gold surge as investors flee equities', sentiment: 'up', time: 'Now' },
+    { title: 'Circuit breakers triggered on major indices', sentiment: 'down', time: '15m ago' },
+  ],
+};
 
 // ── OHLC candle history ending at currentPrice (for TradingView-style chart) ──
 export function generateCandles(assetId, currentPrice, tf = '1M', count = 70) {

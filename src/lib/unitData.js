@@ -1,4 +1,4 @@
-// WealthQuest — 11 units, ~30 lessons, ~170 terms
+// Monelingo — 11 units, ~30 lessons, ~170 terms
 // Each lesson has exactly 5 terms drawn from glossaryData.js
 
 export const UNITS = [

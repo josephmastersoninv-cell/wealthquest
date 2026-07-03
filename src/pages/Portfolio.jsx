@@ -2761,7 +2761,7 @@ export default function Portfolio() {
             milestone={milestone}
             onClose={() => setMilestone(null)}
             onShare={m => {
-              const text = `🏆 I just hit the "${m.label}" milestone on WealthQuest! My portfolio is growing 📈\nhttps://wealthquest-eta.vercel.app`;
+              const text = `🏆 I just hit the "${m.label}" milestone on Monelingo! My portfolio is growing 📈\nhttps://monelingo.vercel.app`;
               navigator.share ? navigator.share({ text }) : navigator.clipboard.writeText(text).then(() => toast.success('Copied to clipboard!'));
             }}
           />

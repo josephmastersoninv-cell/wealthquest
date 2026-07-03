@@ -109,7 +109,7 @@ export default function LevelUpModal({ progress }) {
               </button>
               <button
                 onClick={() => {
-                  const text = `🏆 I just reached Level ${newLevel.level} "${newLevel.title}" on WealthQuest! Can you beat me? 📈\nhttps://wealthquest-eta.vercel.app`;
+                  const text = `🏆 I just reached Level ${newLevel.level} "${newLevel.title}" on Monelingo! Can you beat me? 📈\nhttps://monelingo.vercel.app`;
                   if (navigator.share) navigator.share({ text });
                   else navigator.clipboard?.writeText(text);
                 }}

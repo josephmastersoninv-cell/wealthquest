@@ -17,7 +17,14 @@
       "Bash(open /Users/josephmasterson/Downloads/wealthquest/dist)",
       "Bash(npx vercel *)",
       "Bash(git remote *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(node_modules/.bin/vite build *)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(grep -rn \"contribution\\\\|portfolio_balance\\\\|\\\\$400\\\\|countryData\\\\|market.*share\\\\|share.*market\" /Users/josephmasterson/Downloads/wealthquest/src --include=\"*.jsx\" --include=\"*.js\")",
+      "Bash(npm list *)",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget",
+      "Bash(xargs sed -i '' -e 's/WealthQuest Pro/Monelingo Pro/g' -e s/WealthQuest/Monelingo/g -e 's|https://wealthquest-eta\\\\.vercel\\\\.app|https://monelingo.vercel.app|g')"
     ]
   }
 }
