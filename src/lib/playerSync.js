@@ -1,5 +1,29 @@
 import { supabase, isConfigured } from './supabase';
 
+// ── Real-time subscription ─────────────────────────────────────────────────────
+// Returns an unsubscribe function. `onUpdate` is called with { players, countryTotals }
+// whenever any player row changes.
+export function subscribeToLeaderboard(onUpdate) {
+  if (!isConfigured || !supabase) return () => {};
+
+  async function refresh() {
+    const [players, totals] = await Promise.all([
+      fetchXpLeaderboard(),
+      fetchCountryTotals(),
+    ]);
+    onUpdate({ players, countryTotals: totals });
+  }
+
+  const channel = supabase
+    .channel('players-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => {
+      refresh();
+    })
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
+}
+
 // ── Leaderboard queries ────────────────────────────────────────────────────────
 
 export async function fetchLeaderboard() {

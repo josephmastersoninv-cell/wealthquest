@@ -4,7 +4,7 @@ import { Zap, TrendingUp, TrendingDown, Clock, Crown, Globe, X, CheckCircle2, XC
 import { useUserProgress } from '@/lib/useUserProgress';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
 import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, getPassiveXpToday, claimPassiveXp, SQUAD_MAX, RECRUIT_TIERS, getWeekSeed } from '@/lib/squadData';
-import { fetchXpLeaderboard, fetchCountryTotals, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
+import { fetchXpLeaderboard, fetchCountryTotals, subscribeToLeaderboard, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { useAuth } from '@/lib/authContext';
 import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getStockResult, getTimeUntilReveal } from '@/lib/arenaData';
 import { useNavigate } from 'react-router-dom';
@@ -232,8 +232,16 @@ export default function League() {
   }, []);
 
   useEffect(() => {
+    // Initial load
     fetchXpLeaderboard().then(p => { if (p.length) setRealPlayers(p); });
     fetchCountryTotals().then(t => { if (t) setRealCountryTotals(t); });
+
+    // Real-time — updates the moment any player's XP or portfolio changes
+    const unsub = subscribeToLeaderboard(({ players, countryTotals }) => {
+      if (players.length) setRealPlayers(players);
+      if (countryTotals)  setRealCountryTotals(countryTotals);
+    });
+    return unsub;
   }, []);
 
   // ── Weekly leaderboard ────────────────────────────────────────────────────
