@@ -45,49 +45,6 @@ function getCurrentLeague(xp) {
 const GHOST_NAMES = ['AlphaHedge','BullRunner','ValueVault','MarketMaven','FundFlow','YieldYoda','DeltaTrader','PortfolioPro','RiskRanger','BondBreaker','IndexIris','CapGainCarl','SharpeSam','MacroMax','QuantFox','PivotBear','SigmaWolf','OmegaHawk','PrimeTiger','BetaEagle'];
 const MEDALS = ['🥇','🥈','🥉'];
 
-// Country competition — ranked by combined portfolio value
-function buildCountryLeaderboard(weekSeed, myPortfolio, myCountryCode) {
-  const rand = seededRand(weekSeed * 7919);
-  const countryMap = {};
-  COUNTRIES.forEach(c => { countryMap[c.code] = { ...c, players: 0, totalValue: 0, members: [] }; });
-
-  // Named ghost players
-  GHOST_NAMES.forEach((name, i) => {
-    const countryIdx = Math.floor(rand() * COUNTRIES.length);
-    const code = COUNTRIES[countryIdx].code;
-    const portfolioValue = Math.round((5000 + rand() * 145000) * 100) / 100;
-    const flag = COUNTRIES[countryIdx].flag;
-    countryMap[code].players++;
-    countryMap[code].totalValue += portfolioValue;
-    if (countryMap[code].members.length < 3) countryMap[code].members.push({ name, flag, portfolioValue });
-  });
-
-  // Extra anonymous ghosts for volume
-  for (let i = 0; i < 60; i++) {
-    const countryIdx = Math.floor(rand() * COUNTRIES.length);
-    const code = COUNTRIES[countryIdx].code;
-    countryMap[code].players++;
-    countryMap[code].totalValue += Math.round((3000 + rand() * 80000) * 100) / 100;
-  }
-
-  // Add real player to their country
-  if (myCountryCode && countryMap[myCountryCode]) {
-    countryMap[myCountryCode].players++;
-    countryMap[myCountryCode].totalValue += myPortfolio;
-    countryMap[myCountryCode].hasMe = true;
-    countryMap[myCountryCode].myValue = myPortfolio;
-  }
-
-  const list = Object.values(countryMap)
-    .filter(c => c.players > 0)
-    .sort((a, b) => b.totalValue - a.totalValue);
-
-  // Attach relative bar widths (percent of leader)
-  const max = list[0]?.totalValue ?? 1;
-  list.forEach(c => { c.barPct = Math.round((c.totalValue / max) * 100); });
-
-  return list;
-}
 
 function fmtValue(n) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
@@ -268,11 +225,10 @@ export default function League() {
           const c = getCountryByCode(p.country_code);
           return { id: p.id, name: p.name, avatar: p.avatar, flag: c?.flag ?? '🌍', xp: p.xp ?? 0, real: true };
         });
-      const padded = others.length < 5 ? [...others, ...ghosts.slice(0, 10 - others.length)] : others;
-      return [...padded, me].sort((a, b) => b.xp - a.xp);
+      return [...others, me].sort((a, b) => b.xp - a.xp);
     }
 
-    return [...ghosts, me].sort((a, b) => b.xp - a.xp);
+    return [me];
   }, [myXp, league.name, myCountry, realPlayers, myPlayerId, myPlayerData]);
 
   const myRank = leaderboard.findIndex(p => p.isMe) + 1;
@@ -284,47 +240,33 @@ export default function League() {
 
   // ── Country leaderboard ───────────────────────────────────────────────────
   const countryBoard = useMemo(() => {
+    const countryMap = {};
+
+    // Seed with real Supabase data if available
     if (realCountryTotals) {
-      // Build from real Supabase data + add ghost volume for empty countries
-      const rand = seededRand(weekSeed * 7919);
-      const countryMap = {};
-      COUNTRIES.forEach(c => { countryMap[c.code] = { ...c, players: 0, totalValue: 0, members: [], hasMe: false, myValue: 0 }; });
-
-      // Real players from Supabase
       Object.entries(realCountryTotals).forEach(([code, data]) => {
-        if (countryMap[code]) {
-          countryMap[code].players = data.count;
-          countryMap[code].totalValue = data.total;
-        }
+        const countryInfo = getCountryByCode(code);
+        if (!countryInfo) return;
+        countryMap[code] = { ...countryInfo, players: data.count, totalXp: data.total, hasMe: false };
       });
-
-      // My country contribution (using real portfolio key)
-      const myPortfolioVal = (() => {
-        try { const p = JSON.parse(localStorage.getItem('wealthquest_portfolio') ?? 'null'); if (!p) return 10000; const h = p.holdings ?? []; return p.cash + h.reduce((s, hh) => s + hh.avgCost * hh.shares, 0); } catch { return 10000; }
-      })();
-      if (myCountry && countryMap[myCountry]) {
-        countryMap[myCountry].hasMe = true;
-        countryMap[myCountry].myValue = myPortfolioVal;
-      }
-
-      // Pad with ghosts if few real players
-      if (Object.values(realCountryTotals).reduce((s, v) => s + v.count, 0) < 20) {
-        GHOST_NAMES.forEach((name, i) => {
-          const countryIdx = Math.floor(rand() * COUNTRIES.length);
-          const code = COUNTRIES[countryIdx].code;
-          const portfolioValue = Math.round((5000 + rand() * 145000) * 100) / 100;
-          countryMap[code].players++;
-          countryMap[code].totalValue += portfolioValue;
-        });
-      }
-
-      const list = Object.values(countryMap).filter(c => c.players > 0).sort((a, b) => b.totalValue - a.totalValue);
-      const max = list[0]?.totalValue ?? 1;
-      list.forEach(c => { c.barPct = Math.round((c.totalValue / max) * 100); });
-      return list;
     }
-    return buildCountryLeaderboard(weekSeed, myPortfolio, myCountry);
-  }, [weekSeed, myPortfolio, myCountry, realCountryTotals]);
+
+    // Add the current user's country if signed in and has a country set
+    if (myCountry) {
+      const countryInfo = getCountryByCode(myCountry);
+      if (countryInfo) {
+        if (!countryMap[myCountry]) {
+          countryMap[myCountry] = { ...countryInfo, players: 0, totalXp: 0, hasMe: false };
+        }
+        countryMap[myCountry].hasMe = true;
+      }
+    }
+
+    const list = Object.values(countryMap).sort((a, b) => b.totalXp - a.totalXp);
+    const max = list[0]?.totalXp ?? 1;
+    list.forEach(c => { c.barPct = max > 0 ? Math.round((c.totalXp / max) * 100) : 0; });
+    return list;
+  }, [myCountry, realCountryTotals]);
   const myCountryRank = countryBoard.findIndex(c => c.hasMe) + 1;
 
   // ── Squad ─────────────────────────────────────────────────────────────────
@@ -808,13 +750,13 @@ export default function League() {
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground font-bold">Country total</span>
-                      <span className="font-extrabold text-foreground">{fmtValue(countryBoard.find(c => c.hasMe)?.totalValue ?? 0)}</span>
+                      <span className="font-extrabold text-foreground">{fmtValue(countryBoard.find(c => c.hasMe)?.totalXp ?? 0)}</span>
                     </div>
                   </div>
                 )}
 
                 {/* Country leaderboard */}
-                <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-3">🌍 Rankings — Combined Portfolio Value</p>
+                <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-3">🌍 Rankings — Combined XP</p>
                 <div className="space-y-2">
                   {countryBoard.slice(0, 15).map((c, i) => (
                     <div key={c.code} className={`rounded-2xl border px-4 py-3 ${c.hasMe ? 'bg-primary/10 border-primary/30' : 'bg-card border-border'}`}>
@@ -833,7 +775,7 @@ export default function League() {
                           <p className="text-[10px] text-muted-foreground">{c.players} investor{c.players !== 1 ? 's' : ''}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className={`text-sm font-extrabold ${c.hasMe ? 'text-emerald-400' : 'text-foreground'}`}>{fmtValue(c.totalValue)}</p>
+                          <p className={`text-sm font-extrabold ${c.hasMe ? 'text-emerald-400' : 'text-foreground'}`}>{`${(c.totalXp ?? 0).toLocaleString()} XP`}</p>
                           <p className="text-[10px] text-muted-foreground">combined</p>
                         </div>
                       </div>

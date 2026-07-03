@@ -50,14 +50,15 @@ export async function fetchCountryTotals() {
   if (!isConfigured || !supabase) return null;
   const { data } = await supabase
     .from('players')
-    .select('country_code, portfolio_value');
+    .select('country_code, xp')
+    .not('country_code', 'is', null);
   if (!data) return null;
   const totals = {};
   data.forEach(p => {
     if (!p.country_code) return;
     if (!totals[p.country_code]) totals[p.country_code] = { total: 0, count: 0 };
-    totals[p.country_code].total  += Number(p.portfolio_value ?? 0);
-    totals[p.country_code].count  += 1;
+    totals[p.country_code].total += Number(p.xp ?? 0);
+    totals[p.country_code].count += 1;
   });
   return totals;
 }
