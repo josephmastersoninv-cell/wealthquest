@@ -149,18 +149,17 @@ export async function fetchNews() {
       sentiment: getSentiment(item),
     }));
 
-    const rumours = generateRumours().map(r => ({
-      ...r,
-      stocks: [r.symbol],
-      sentiment: 'neutral',
-    }));
+    // Only add rumours if we actually got real news — they complement real news, not replace it
+    const rumours = enriched.length > 0
+      ? generateRumours().map(r => ({ ...r, stocks: [r.symbol], sentiment: 'neutral' }))
+      : [];
 
     const all = [...enriched, ...rumours];
     localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: all }));
     return all;
   } catch {
-    // Fallback: just return rumours when API unavailable
-    return generateRumours().map(r => ({ ...r, stocks: [r.symbol], sentiment: 'neutral' }));
+    // Return empty — the UI will show a "news unavailable" state rather than fake content
+    return [];
   }
 }
 

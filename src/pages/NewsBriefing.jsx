@@ -221,10 +221,24 @@ export default function NewsBriefing() {
 
       {/* Empty */}
       {!loading && filtered.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-          <p className="text-4xl mb-3">📡</p>
-          <p className="text-white font-extrabold text-lg">No stories found</p>
-          <p className="text-white/50 text-sm mt-1">Try a different filter or check back later</p>
+        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-4">
+          <p className="text-5xl">📡</p>
+          <div>
+            <p className="text-white font-extrabold text-xl">
+              {filter === 'all' ? 'Market news unavailable' : 'No stories in this category'}
+            </p>
+            <p className="text-white/50 text-sm mt-2">
+              {filter === 'all'
+                ? 'Live feeds are temporarily down. Check back in a few minutes.'
+                : 'Try switching to All or a different category.'}
+            </p>
+          </div>
+          {fromArena && filter === 'all' && (
+            <button onClick={handleFinish}
+              className="mt-2 h-12 px-6 rounded-2xl bg-primary text-white font-extrabold text-sm active:scale-95 transition-all">
+              Make Picks Without News →
+            </button>
+          )}
         </div>
       )}
 
