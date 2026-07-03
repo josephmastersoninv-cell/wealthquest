@@ -19,7 +19,7 @@ const GOALS    = [
 function validateEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
 export default function OnboardingModal() {
-  const { user, player, loading, isAuthenticated, signUp, signIn, signInWithGoogle, upsertPlayer } = useAuth();
+  const { user, player, loading, isAuthenticated, signUp, signIn, signInWithGoogle, upsertPlayer, resetPasswordEmail } = useAuth();
 
   // Show if not authenticated, or authenticated but missing country, or just finished sign-up
   const [signupComplete, setSignupComplete] = useState(false);
@@ -30,6 +30,8 @@ export default function OnboardingModal() {
   const [tab, setTab]   = useState('signup');
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
 
   // Collected across steps (account NOT created until step 4)
   const [avatar,   setAvatar]   = useState('🦁');
@@ -174,6 +176,19 @@ export default function OnboardingModal() {
       await signIn({ email: email.trim(), password });
     } catch (e) {
       setErr(e.message ?? 'Sign in failed. Check your credentials.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!validateEmail(email)) { setErr('Enter the email you signed up with.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await resetPasswordEmail(email.trim());
+      setForgotSent(true);
+    } catch (e) {
+      setErr(e.message ?? 'Could not send reset email.');
     } finally {
       setBusy(false);
     }
@@ -361,6 +376,9 @@ export default function OnboardingModal() {
           onSubmit={handleSignIn}
           onGoogle={handleGoogle}
           isConfigured={isConfigured}
+          forgotMode={forgotMode} setForgotMode={m => { setForgotMode(m); setErr(''); setForgotSent(false); }}
+          forgotSent={forgotSent}
+          onForgotPassword={handleForgotPassword}
         />
       ) : (
         <>
@@ -420,7 +438,47 @@ function Divider() {
   );
 }
 
-function LoginView({ email, setEmail, password, setPassword, showPw, setShowPw, busy, err, setErr, onSubmit, onGoogle, isConfigured }) {
+function LoginView({ email, setEmail, password, setPassword, showPw, setShowPw, busy, err, setErr, onSubmit, onGoogle, isConfigured, forgotMode, setForgotMode, forgotSent, onForgotPassword }) {
+  // ── Forgot password screen ──
+  if (forgotMode) {
+    return (
+      <div className="space-y-5">
+        <div className="text-center">
+          <div className="text-5xl mb-2">🔑</div>
+          <h2 className="text-2xl font-black text-foreground">Reset password</h2>
+          <p className="text-sm text-muted-foreground mt-1">We'll send a reset link to your email</p>
+        </div>
+
+        {forgotSent ? (
+          <div className="space-y-4 text-center">
+            <div className="text-5xl">📧</div>
+            <p className="text-sm text-foreground font-bold">Reset link sent to <span className="text-primary">{email}</span></p>
+            <p className="text-xs text-muted-foreground">Click the link in the email to set a new password. Check your spam folder if you don't see it.</p>
+            <button onClick={() => setForgotMode(false)}
+              className="w-full h-12 rounded-2xl bg-primary text-white font-extrabold text-sm active:scale-95 transition-all">
+              ← Back to Sign In
+            </button>
+          </div>
+        ) : (
+          <>
+            <div>
+              <label className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Email</label>
+              <input value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="you@example.com" type="email" autoFocus
+                className="mt-1.5 w-full h-12 px-4 rounded-2xl border-2 border-border bg-muted text-foreground font-bold text-sm outline-none focus:border-primary transition-colors" />
+            </div>
+            {err && <p className="text-xs text-rose-500 font-bold flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{err}</p>}
+            <button onClick={onForgotPassword} disabled={busy || !email}
+              className={`w-full h-14 rounded-2xl font-extrabold text-base transition-all ${!busy && email ? 'bg-primary text-white active:scale-95' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}>
+              {busy ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Sending…</span> : 'Send Reset Link →'}
+            </button>
+            <button onClick={() => setForgotMode(false)} className="w-full text-center text-xs text-muted-foreground py-1">← Back to Sign In</button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ── Normal sign-in screen ──
   return (
     <div className="space-y-5">
       <div className="text-center">
@@ -452,9 +510,12 @@ function LoginView({ email, setEmail, password, setPassword, showPw, setShowPw, 
             {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
+        <button onClick={() => setForgotMode(true)} className="mt-1.5 text-xs text-primary font-bold float-right">
+          Forgot password?
+        </button>
       </div>
 
-      {err && <p className="text-xs text-rose-500 font-bold flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{err}</p>}
+      {err && <p className="text-xs text-rose-500 font-bold flex items-center gap-1 clear-both"><AlertCircle className="w-3.5 h-3.5" />{err}</p>}
 
       <button onClick={onSubmit} disabled={busy || !email || !password}
         className={`w-full h-14 rounded-2xl font-extrabold text-base transition-all ${!busy && email && password ? 'bg-primary text-white active:scale-95' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}>

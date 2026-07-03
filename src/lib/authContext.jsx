@@ -5,9 +5,10 @@ import { pullAndRestore } from './cloudSync';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user,    setUser]    = useState(null);
-  const [player,  setPlayer]  = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user,             setUser]            = useState(null);
+  const [player,           setPlayer]          = useState(null);
+  const [loading,          setLoading]         = useState(true);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   const fetchPlayer = useCallback(async (userId) => {
     if (!supabase || !userId) return null;
@@ -40,6 +41,10 @@ export function AuthProvider({ children }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (_event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true);
+        return;
+      }
       setUser(session?.user ?? null);
       if (session?.user) {
         // On fresh sign-in (not page refresh — that's handled by getSession above)
@@ -95,6 +100,21 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut();
   }
 
+  async function resetPasswordEmail(email) {
+    if (!supabase) throw new Error('Supabase not configured');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) throw error;
+  }
+
+  async function updatePassword(newPassword) {
+    if (!supabase) throw new Error('Supabase not configured');
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    setPasswordRecovery(false);
+  }
+
   async function updatePlayer(updates) {
     if (!supabase || !user) return null;
     const { data } = await supabase
@@ -125,10 +145,13 @@ export function AuthProvider({ children }) {
       loading,
       isAuthenticated: !!user,
       isConfigured,
+      passwordRecovery,
       signUp,
       signIn,
       signInWithGoogle,
       signOut,
+      resetPasswordEmail,
+      updatePassword,
       updatePlayer,
       upsertPlayer,
       refreshPlayer: () => user && refreshPlayer(user.id),

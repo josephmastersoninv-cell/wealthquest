@@ -22,6 +22,7 @@ import GlossarySearch from '@/pages/GlossarySearch';
 import NewsBriefing from '@/pages/NewsBriefing';
 import BottomNav from '@/components/BottomNav';
 import OnboardingModal from '@/components/OnboardingModal';
+import ResetPasswordModal from '@/components/ResetPasswordModal';
 
 const NAV_ROUTES = ['/', '/play', '/portfolio', '/league', '/profile', '/flashcards'];
 
@@ -54,6 +55,7 @@ export default function App() {
       </Routes>
       {showNav && <BottomNav />}
       <OnboardingModal />
+      <ResetPasswordModal />
     </AuthProvider>
     </ThemeProvider>
   );
