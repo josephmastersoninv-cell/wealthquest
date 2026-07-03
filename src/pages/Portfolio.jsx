@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { fetchLeaderboard, syncPortfolioValue, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import marketSim from '@/lib/marketSim';
 import { getCountryByCode } from '@/lib/countryData';
+import { pushPortfolio, flushNow } from '@/lib/cloudSync';
 
 const PORTFOLIO_KEY   = 'wealthquest_portfolio';
 const WATCHLIST_KEY   = 'wealthquest_watchlist';
@@ -1380,6 +1381,12 @@ export default function Portfolio() {
   // Keep portfolio ref synced and push to sim so it can compute snapshots off-page
   useEffect(() => { portfolioRef.current = portfolio; marketSim.setPortfolio(portfolio); }, [portfolio]);
 
+  // Flush any pending cloud sync when the tab is closed
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushNow);
+    return () => window.removeEventListener('beforeunload', flushNow);
+  }, []);
+
   // ── Fetch real prices on mount (idempotent — sim skips if already loaded) ──
   const loadPrices = useCallback(async () => {
     setRefreshing(true);
@@ -1671,6 +1678,7 @@ export default function Portfolio() {
   function savePortfolio(p) {
     localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p));
     setPortfolio(p);
+    pushPortfolio(p);
   }
 
   function handleTrade(mode, shares, dollars) {

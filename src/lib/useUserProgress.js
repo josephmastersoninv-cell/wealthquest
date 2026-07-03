@@ -44,6 +44,10 @@ export function useUserProgress() {
 
   useEffect(() => {
     loadProgress();
+    // Re-read localStorage whenever cloud sync restores data from Supabase
+    const onRestore = () => loadProgress();
+    window.addEventListener('wq:progress_restored', onRestore);
+    return () => window.removeEventListener('wq:progress_restored', onRestore);
   }, []);
 
   const loadProgress = async () => {

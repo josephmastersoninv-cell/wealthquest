@@ -1,6 +1,9 @@
 // Drop-in replacement for the Base44 SDK client used by useUserProgress.js.
 // Mimics the shape of `base44.entities.UserProgress.{list,create,update}`
 // but persists everything to localStorage — no network, no account needed.
+// Also fires background cloud sync on every write so signed-in users stay in sync.
+
+import { pushProgress } from './cloudSync';
 
 const STORAGE_KEY = 'wealthquest_user_progress';
 
@@ -48,6 +51,7 @@ export const base44 = {
         const records = readAll();
         records.push(record);
         writeAll(records);
+        pushProgress(record);
         return delay(record);
       },
       async update(id, updates) {
@@ -56,6 +60,7 @@ export const base44 = {
         if (idx === -1) throw new Error(`UserProgress record ${id} not found`);
         records[idx] = { ...records[idx], ...updates };
         writeAll(records);
+        pushProgress(records[idx]);
         return delay(records[idx]);
       },
       // Handy for a "reset progress" button — not part of the original API.

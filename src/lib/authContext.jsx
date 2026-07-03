@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase, isConfigured } from './supabase';
+import { pullAndRestore } from './cloudSync';
 
 const AuthContext = createContext(null);
 
@@ -29,13 +30,23 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) await refreshPlayer(session.user.id);
+      if (session?.user) {
+        // Restore full progress from cloud into localStorage on every page load
+        await pullAndRestore(session.user.id);
+        window.dispatchEvent(new CustomEvent('wq:progress_restored'));
+        await refreshPlayer(session.user.id);
+      }
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
+        // On fresh sign-in (not page refresh — that's handled by getSession above)
+        if (_event === 'SIGNED_IN') {
+          await pullAndRestore(session.user.id);
+          window.dispatchEvent(new CustomEvent('wq:progress_restored'));
+        }
         await refreshPlayer(session.user.id);
       } else {
         setPlayer(null);
