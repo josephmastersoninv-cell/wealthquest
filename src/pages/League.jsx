@@ -4,10 +4,15 @@ import { Zap, TrendingUp, TrendingDown, Clock, Crown, Globe, X, CheckCircle2, XC
 import { useUserProgress } from '@/lib/useUserProgress';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
 import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, getPassiveXpToday, claimPassiveXp, SQUAD_MAX, RECRUIT_TIERS, getWeekSeed } from '@/lib/squadData';
-import { fetchXpLeaderboard, fetchCountryTotals, subscribeToLeaderboard, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
+import { fetchXpLeaderboard, fetchCountryTotals, fetchPlayersByCountry, subscribeToLeaderboard, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { useAuth } from '@/lib/authContext';
-import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getStockResult, getTimeUntilReveal } from '@/lib/arenaData';
+import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getTimeUntilReveal, getLivePrice, isWeekendArena, BRIEFING_XP_MULT } from '@/lib/arenaData';
+import marketSim from '@/lib/marketSim';
 import { useNavigate } from 'react-router-dom';
+import { checkWeeklyReward, claimWeeklyReward, MIN_COMPETITIVE } from '@/lib/leagueRewards';
+import { sounds } from '@/lib/sound';
+import { haptics } from '@/lib/haptics';
+import Confetti from '@/components/Confetti';
 import { toast } from 'sonner';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -167,6 +172,9 @@ export default function League() {
   const [timeUntilReveal, setTimeUntilReveal] = useState(getTimeUntilReveal);
   const [realPlayers, setRealPlayers] = useState([]);
   const [realCountryTotals, setRealCountryTotals] = useState(null);
+  const [selectedCountry, setSelectedCountry] = useState(null); // country object for drill-down sheet
+  const [countryPlayers, setCountryPlayers] = useState([]);
+  const [countryPlayersLoading, setCountryPlayersLoading] = useState(false);
   const weekSeed = getWeekSeed();
   const myPlayerData = getMyPlayerData();
   const myPlayerId = getMyPlayerId();
@@ -186,6 +194,13 @@ export default function League() {
       }
     }, 30000);
     return () => clearInterval(t);
+  }, []);
+
+  // Live prices for the arena — real entry snapshots & live pick tracking
+  const [, setPriceTick] = useState(0);
+  useEffect(() => {
+    marketSim.init();
+    return marketSim.onPrices(() => setPriceTick(t => t + 1));
   }, []);
 
   useEffect(() => {
@@ -232,6 +247,27 @@ export default function League() {
   }, [myXp, league.name, myCountry, realPlayers, myPlayerId, myPlayerData]);
 
   const myRank = leaderboard.findIndex(p => p.isMe) + 1;
+
+  // ── Weekly reward: claim last week's finish when a new week starts ──────────
+  const [weeklyReward, setWeeklyReward] = useState(null);
+  const [claimConfetti, setClaimConfetti] = useState(false);
+  useEffect(() => {
+    if (myRank < 1) return;
+    const pending = checkWeeklyReward(weekSeed, myRank, leaderboard.length);
+    if (pending) setWeeklyReward(pending);
+  }, [weekSeed, myRank, leaderboard.length]);
+
+  function claimReward() {
+    if (!weeklyReward) return;
+    updateProgress({ coins: (progress?.coins ?? 0) + weeklyReward.coins });
+    claimWeeklyReward(weeklyReward.week);
+    sounds.coinCollect();
+    haptics.streak();
+    setClaimConfetti(true);
+    toast.success(`+${weeklyReward.coins} 💰 · ${weeklyReward.title}!`);
+    setWeeklyReward(null);
+  }
+
   const PROMO = 3;
   const DANGER_START = leaderboard.length - 3;
   const promoXp = leaderboard[PROMO - 1]?.xp ?? 0;
@@ -247,7 +283,7 @@ export default function League() {
       Object.entries(realCountryTotals).forEach(([code, data]) => {
         const countryInfo = getCountryByCode(code);
         if (!countryInfo) return;
-        countryMap[code] = { ...countryInfo, players: data.count, totalXp: data.total, hasMe: false };
+        countryMap[code] = { ...countryInfo, players: data.count, totalValue: data.total, hasMe: false };
       });
     }
 
@@ -256,18 +292,28 @@ export default function League() {
       const countryInfo = getCountryByCode(myCountry);
       if (countryInfo) {
         if (!countryMap[myCountry]) {
-          countryMap[myCountry] = { ...countryInfo, players: 0, totalXp: 0, hasMe: false };
+          countryMap[myCountry] = { ...countryInfo, players: 0, totalValue: 0, hasMe: false };
         }
         countryMap[myCountry].hasMe = true;
       }
     }
 
-    const list = Object.values(countryMap).sort((a, b) => b.totalXp - a.totalXp);
-    const max = list[0]?.totalXp ?? 1;
-    list.forEach(c => { c.barPct = max > 0 ? Math.round((c.totalXp / max) * 100) : 0; });
+    const list = Object.values(countryMap).sort((a, b) => b.totalValue - a.totalValue);
+    const max = list[0]?.totalValue ?? 1;
+    list.forEach(c => { c.barPct = max > 0 ? Math.round((c.totalValue / max) * 100) : 0; });
     return list;
   }, [myCountry, realCountryTotals]);
   const myCountryRank = countryBoard.findIndex(c => c.hasMe) + 1;
+
+  function handleCountryTap(country) {
+    setSelectedCountry(country);
+    setCountryPlayers([]);
+    setCountryPlayersLoading(true);
+    fetchPlayersByCountry(country.code).then(players => {
+      setCountryPlayers(players);
+      setCountryPlayersLoading(false);
+    });
+  }
 
   // ── Squad ─────────────────────────────────────────────────────────────────
   const recruitPool = useMemo(() => generateRecruitPool(weekSeed), [weekSeed]);
@@ -347,6 +393,7 @@ export default function League() {
 
   return (
     <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto">
+      <Confetti active={claimConfetti} onDone={() => setClaimConfetti(false)} />
 
       {/* ── Header ── */}
       <div className={`bg-gradient-to-br ${league.gradient} px-4 pt-12 pb-6 relative overflow-hidden`}>
@@ -448,7 +495,12 @@ export default function League() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-xl font-black text-foreground">Market Clash ⚡</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Pick 5 stocks UP or DOWN · Results in 1 hour · Affects your portfolio & rank</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Pick 5 {isWeekendArena() ? 'cryptos' : 'assets'} UP or DOWN · Resolved by <span className="font-bold text-foreground">real market prices</span> 1h later
+                </p>
+                {isWeekendArena() && (
+                  <p className="text-[10px] font-bold text-amber-400 mt-1">🪙 Weekend mode — crypto only (NYSE is closed, stocks don't move)</p>
+                )}
               </div>
               <button
                 onClick={() => navigate('/news?from=arena')}
@@ -472,7 +524,8 @@ export default function League() {
                 <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-2xl shrink-0">📡</div>
                 <div className="flex-1 text-left">
                   <p className="font-extrabold text-white text-sm">Read Today's Briefing First</p>
-                  <p className="text-xs text-white/60 mt-0.5">Live news, central bank reports & rumours — then make informed picks</p>
+                  <p className="text-xs text-white/60 mt-0.5">Live news & market reports — then make informed picks</p>
+                  <p className="text-[11px] font-extrabold text-amber-300 mt-1">📰 Informed Investor bonus: +50% XP on today's wins</p>
                 </div>
                 <ChevronDown className="w-4 h-4 text-white/40 -rotate-90 shrink-0" />
               </motion.button>
@@ -488,6 +541,7 @@ export default function League() {
                   </p>
                   <p className={`text-sm font-bold mt-0.5 ${results.portfolioChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {results.portfolioChange >= 0 ? '+' : ''}${results.portfolioChange} to portfolio · +{results.xpGain} XP
+                    {results.bonusXp > 0 && <span className="text-amber-400"> (incl. 📰 +{results.bonusXp} informed bonus)</span>}
                   </p>
                 </div>
                 <div className="p-4 space-y-2">
@@ -496,7 +550,14 @@ export default function League() {
                       <span className={`text-lg ${r.won ? 'grayscale-0' : 'opacity-40'}`}>
                         {arenaStocks.find(s => s.symbol === r.symbol)?.emoji ?? '📊'}
                       </span>
-                      <span className="text-sm font-bold text-foreground flex-1">{r.symbol}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-bold text-foreground">{r.symbol}</span>
+                        {r.movePct != null && (
+                          <p className={`text-[11px] font-bold ${r.movePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            actual: {r.movePct >= 0 ? '▲' : '▼'} {Math.abs(r.movePct).toFixed(2)}%
+                          </p>
+                        )}
+                      </div>
                       <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${r.direction === 'up' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
                         {r.direction === 'up' ? '📈 UP' : '📉 DOWN'}
                       </span>
@@ -542,16 +603,39 @@ export default function League() {
                     </button>
                   )}
                 </div>
-                <div className="p-4 space-y-2">
-                  {submitted.picks.map(pick => (
-                    <div key={pick.symbol} className="flex items-center gap-3">
-                      <span className="text-lg">{arenaStocks.find(s => s.symbol === pick.symbol)?.emoji ?? '📊'}</span>
-                      <span className="text-sm font-bold text-foreground flex-1">{pick.symbol}</span>
-                      <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${pick.direction === 'up' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                        {pick.direction === 'up' ? '📈 UP' : '📉 DOWN'}
-                      </span>
-                    </div>
-                  ))}
+                <div className="p-4 space-y-2.5">
+                  {submitted.picks.map(pick => {
+                    const entry = submitted.entryPrices?.[pick.symbol];
+                    const live  = getLivePrice(pick.symbol);
+                    const movePct = entry && live ? ((live - entry) / entry) * 100 : null;
+                    const winning = movePct === null ? null
+                      : movePct === 0 ? true
+                      : (movePct > 0) === (pick.direction === 'up');
+                    return (
+                      <div key={pick.symbol} className="flex items-center gap-3">
+                        <span className="text-lg">{arenaStocks.find(s => s.symbol === pick.symbol)?.emoji ?? '📊'}</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-bold text-foreground">{pick.symbol}</span>
+                          {movePct !== null && (
+                            <p className={`text-[11px] font-bold ${movePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {movePct >= 0 ? '▲' : '▼'} {Math.abs(movePct).toFixed(2)}% since lock-in
+                            </p>
+                          )}
+                        </div>
+                        <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${pick.direction === 'up' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                          {pick.direction === 'up' ? '📈 UP' : '📉 DOWN'}
+                        </span>
+                        {winning !== null && (
+                          <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 ${winning ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
+                            {winning ? 'WINNING' : 'LOSING'}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {submitted.briefingBonus && (
+                    <p className="text-[11px] font-extrabold text-amber-400 pt-1">📰 Informed Investor bonus active — +50% XP on wins</p>
+                  )}
                 </div>
               </div>
             )}
@@ -575,7 +659,14 @@ export default function League() {
                           <span className="text-3xl">{stock.emoji}</span>
                           <div className="flex-1 min-w-0">
                             <p className="font-extrabold text-foreground">{stock.name}</p>
-                            <p className="text-xs text-muted-foreground font-bold">{stock.symbol}</p>
+                            <p className="text-xs text-muted-foreground font-bold">
+                              {stock.symbol}
+                              {(() => {
+                                const p = getLivePrice(stock.symbol);
+                                const chg = marketSim.prices[stock.assetId]?.change;
+                                return p ? <> · <span className="text-foreground">${p >= 100 ? p.toFixed(0) : p.toFixed(2)}</span>{chg != null && <span className={chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}> {chg >= 0 ? '+' : ''}{chg.toFixed(1)}% today</span>}</> : null;
+                              })()}
+                            </p>
                           </div>
                           {sel && (
                             <span className={`text-xs font-extrabold px-2.5 py-1 rounded-xl ${sel === 'up' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
@@ -618,7 +709,10 @@ export default function League() {
                     }`}>
                     {allPicked ? 'Lock In Picks 🔒' : `Pick ${5 - Object.values(selections).filter(Boolean).length} more…`}
                   </button>
-                  <p className="text-center text-xs text-muted-foreground mt-2">Correct picks earn $500 · Wrong picks cost $200</p>
+                  <p className="text-center text-xs text-muted-foreground mt-2">
+                    Correct picks earn $500 · Wrong picks cost $200
+                    {briefingReadToday && <span className="text-amber-400 font-bold"> · 📰 +50% XP bonus active</span>}
+                  </p>
                 </div>
               </>
             )}
@@ -676,6 +770,15 @@ export default function League() {
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />Bottom 3 relegate</span>
             </div>
 
+            {/* Weekly prizes */}
+            <div className="mx-4 mb-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 px-4 py-2.5">
+              <p className="text-[11px] font-extrabold text-amber-500 mb-1.5 flex items-center gap-1.5">🎁 Weekly prizes · claim when the week resets</p>
+              <div className="flex items-center gap-3 text-[11px] font-bold text-muted-foreground flex-wrap">
+                <span>🥇 300💰</span><span>🥈 200💰</span><span>🥉 150💰</span><span>🏅 Top 10 · 80💰</span><span>⭐ 40💰</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground/70 mt-1.5">Podium prizes need {MIN_COMPETITIVE}+ players in your league.</p>
+            </div>
+
             {/* Full list */}
             <div className="px-4 space-y-1.5">
               {leaderboard.map((player, idx) => {
@@ -714,7 +817,7 @@ export default function League() {
                 );
               })}
             </div>
-            <p className="text-center text-xs text-muted-foreground mt-5 mb-2 px-4">Resets every Monday · Earn XP to climb</p>
+            <p className="text-center text-xs text-muted-foreground mt-5 mb-2 px-4">Earn XP to climb the leaderboard</p>
           </motion.div>
         )}
 
@@ -750,16 +853,16 @@ export default function League() {
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground font-bold">Country total</span>
-                      <span className="font-extrabold text-foreground">{fmtValue(countryBoard.find(c => c.hasMe)?.totalXp ?? 0)}</span>
+                      <span className="font-extrabold text-foreground">{fmtValue(countryBoard.find(c => c.hasMe)?.totalValue ?? 0)}</span>
                     </div>
                   </div>
                 )}
 
                 {/* Country leaderboard */}
-                <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-3">🌍 Rankings — Combined XP</p>
+                <p className="text-xs font-extrabold text-muted-foreground uppercase tracking-widest mb-3">🌍 Rankings — Combined Portfolio</p>
                 <div className="space-y-2">
                   {countryBoard.slice(0, 15).map((c, i) => (
-                    <div key={c.code} className={`rounded-2xl border px-4 py-3 ${c.hasMe ? 'bg-primary/10 border-primary/30' : 'bg-card border-border'}`}>
+                    <div key={c.code} onClick={() => handleCountryTap(c)} className={`rounded-2xl border px-4 py-3 cursor-pointer active:scale-[0.98] transition-transform ${c.hasMe ? 'bg-primary/10 border-primary/30' : 'bg-card border-border'}`}>
                       <div className="flex items-center gap-3 mb-2">
                         <div className="w-7 text-center shrink-0">
                           {i === 0 ? <Crown className="w-5 h-5 text-amber-400 mx-auto" />
@@ -775,8 +878,8 @@ export default function League() {
                           <p className="text-[10px] text-muted-foreground">{c.players} investor{c.players !== 1 ? 's' : ''}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className={`text-sm font-extrabold ${c.hasMe ? 'text-emerald-400' : 'text-foreground'}`}>{`${(c.totalXp ?? 0).toLocaleString()} XP`}</p>
-                          <p className="text-[10px] text-muted-foreground">combined</p>
+                          <p className={`text-sm font-extrabold ${c.hasMe ? 'text-emerald-400' : 'text-foreground'}`}>{fmtValue(c.totalValue ?? 0)}</p>
+                          <p className="text-[10px] text-muted-foreground">portfolio</p>
                         </div>
                       </div>
                       {/* Value bar */}
@@ -905,6 +1008,96 @@ export default function League() {
       {/* Country picker modal */}
       <AnimatePresence>
         {showPicker && <CountryPicker onSelect={handleSelectCountry} onClose={() => setShowPicker(false)} />}
+      </AnimatePresence>
+
+      {/* Country drill-down sheet */}
+      <AnimatePresence>
+        {selectedCountry && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setSelectedCountry(null)}
+              className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="fixed bottom-0 left-0 right-0 z-[70] bg-card rounded-t-3xl max-h-[75vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">{selectedCountry.flag}</span>
+                  <div>
+                    <p className="font-extrabold text-foreground">{selectedCountry.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {countryPlayersLoading ? 'Loading…' : `${countryPlayers.length} player${countryPlayers.length !== 1 ? 's' : ''} · ranked by XP`}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedCountry(null)} className="text-muted-foreground p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+                {countryPlayersLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : countryPlayers.length === 0 ? (
+                  <p className="text-center text-muted-foreground text-sm py-8">No players yet</p>
+                ) : countryPlayers.map((p, i) => (
+                  <div key={p.id} className="flex items-center gap-3 py-2">
+                    <span className="text-xs font-extrabold text-muted-foreground w-6 text-center">#{i + 1}</span>
+                    <span className="text-2xl">{p.avatar ?? '🧑'}</span>
+                    <p className="flex-1 font-bold text-sm text-foreground truncate">{p.name}</p>
+                    <div className="flex items-center gap-1 text-primary">
+                      <Zap className="w-3 h-3" />
+                      <span className="text-sm font-extrabold">{(p.xp ?? 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Weekly reward modal */}
+      <AnimatePresence>
+        {weeklyReward && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] bg-black/75 flex items-center justify-center px-6"
+          >
+            <motion.div
+              initial={{ scale: 0.8, y: 40, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 18 }}
+              className="w-full max-w-sm bg-card rounded-3xl overflow-hidden shadow-2xl border border-border text-center"
+            >
+              <div className={`bg-gradient-to-br ${league.gradient} px-6 py-8`}>
+                <motion.div
+                  initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', delay: 0.15, damping: 12 }}
+                  className="text-7xl mb-2"
+                >
+                  {weeklyReward.emoji}
+                </motion.div>
+                <p className="text-white/80 text-xs font-extrabold uppercase tracking-widest">Last Week's Finish</p>
+                <h2 className="text-white text-2xl font-black mt-1">{weeklyReward.title}</h2>
+              </div>
+              <div className="px-6 py-6 space-y-4">
+                <p className="text-sm text-muted-foreground">{weeklyReward.blurb}</p>
+                <div className="flex items-center justify-center gap-2 text-3xl font-black text-amber-500">
+                  <span>+{weeklyReward.coins}</span><span>💰</span>
+                </div>
+                <button onClick={claimReward}
+                  className="w-full h-14 rounded-2xl bg-primary text-white font-extrabold text-base active:scale-95 transition-all">
+                  Claim Reward 🎁
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );

@@ -16,7 +16,9 @@ import Shop from '@/pages/Shop';
 import Scenarios from '@/pages/Scenarios';
 import Review from '@/pages/Review';
 import BossBattle from '@/pages/BossBattle';
+import ChapterExam from '@/pages/ChapterExam';
 import Pro from '@/pages/Pro';
+import ProSuccess from '@/pages/ProSuccess';
 import Calculators from '@/pages/Calculators';
 import GlossarySearch from '@/pages/GlossarySearch';
 import NewsBriefing from '@/pages/NewsBriefing';
@@ -48,7 +50,9 @@ export default function App() {
         <Route path="/daily" element={<DailyChallenge />} />
         <Route path="/lesson/:id" element={<Lesson />} />
         <Route path="/boss/:unitId" element={<BossBattle />} />
+        <Route path="/chapter-exam/:examId" element={<ChapterExam />} />
         <Route path="/pro" element={<Pro />} />
+        <Route path="/pro/success" element={<ProSuccess />} />
         <Route path="/calculators" element={<Calculators />} />
         <Route path="/glossary" element={<GlossarySearch />} />
         <Route path="/news" element={<NewsBriefing />} />

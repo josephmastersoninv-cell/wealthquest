@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CheckCircle2, XCircle, ChevronRight, Star, Zap, DollarSign } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, ChevronRight, Star, Zap, DollarSign, Heart, Crown } from 'lucide-react';
 import { getLessonById, LESSON_COLORS, scoreToStars, LESSON_XP, LESSON_COINS } from '@/lib/lessonData';
 import { getTermById, GLOSSARY_TERMS } from '@/lib/glossaryData';
 import { useUserProgress } from '@/lib/useUserProgress';
+import { useIsPro } from '@/lib/useIsPro';
 import { computeStreak } from '@/lib/streakUtils';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -96,20 +97,39 @@ function StudyPhase({ terms, colors, onDone }) {
 }
 
 // ---------- Quiz phase ----------
-function QuizPhase({ terms, allTerms, colors, onDone }) {
+function QuizPhase({ terms, allTerms, colors, onDone, onWrongAnswer, onStreakHeart, isPro }) {
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState(null);
   const [answered, setAnswered] = useState(false);
   const [answers, setAnswers] = useState([]);
+  const [consecutiveCorrect, setConsecutiveCorrect] = useState(0);
   // XP bomb: one random question per session gets 2× XP
   const xpBombIdx = useMemo(() => Math.floor(Math.random() * terms.length), []);
   const [xpBombTriggered, setXpBombTriggered] = useState(false);
 
-  const questions = useMemo(() => terms.map(term => {
-    const wrong = allTerms.filter(t => t.id !== term.id);
-    const distractors = shuffleArray(wrong).slice(0, 3).map(t => t.definition);
-    const options = shuffleArray([term.definition, ...distractors]);
-    return { term, options, correct: options.indexOf(term.definition) };
+  const questions = useMemo(() => terms.map((term, i) => {
+    // Distractors from the same category first — makes choices meaningful, not obvious
+    const sameCat = allTerms.filter(t => t.id !== term.id && t.category === term.category);
+    const others  = allTerms.filter(t => t.id !== term.id && t.category !== term.category);
+    const pool    = [...shuffleArray(sameCat), ...shuffleArray(others)].slice(0, 3);
+
+    // Cycle 3 question types so no two consecutive questions feel the same
+    const type = i % 3 === 0 ? 'definition' : i % 3 === 1 ? 'reverse' : (term.example ? 'scenario' : 'reverse');
+
+    if (type === 'definition') {
+      const options = shuffleArray([term.definition, ...pool.map(t => t.definition)]);
+      return { term, type, prompt: 'What is the definition of…', questionText: term.term, big: true,
+        options, correct: options.indexOf(term.definition) };
+    }
+    if (type === 'reverse') {
+      const options = shuffleArray([term.term, ...pool.map(t => t.term)]);
+      return { term, type, prompt: 'Which term matches this definition?', questionText: term.definition, big: false,
+        options, correct: options.indexOf(term.term) };
+    }
+    // scenario: real-world example → identify the concept
+    const options = shuffleArray([term.term, ...pool.map(t => t.term)]);
+    return { term, type, prompt: '💼 Real-world example — which concept is this?', questionText: term.example, big: false,
+      options, correct: options.indexOf(term.term) };
   }), [terms]);
 
   const q = questions[idx];
@@ -124,8 +144,13 @@ function QuizPhase({ terms, allTerms, colors, onDone }) {
       if (correct) {
         if (isXpBomb) { sounds.xpBomb(); haptics.levelUp(); setXpBombTriggered(true); }
         else { sounds.correct(); haptics.correct(); }
+        const newStreak = consecutiveCorrect + 1;
+        setConsecutiveCorrect(newStreak);
+        if (newStreak % 10 === 0) onStreakHeart?.();
       } else {
         sounds.wrong(); haptics.wrong();
+        onWrongAnswer?.();
+        setConsecutiveCorrect(0);
       }
     }
   };
@@ -160,7 +185,7 @@ function QuizPhase({ terms, allTerms, colors, onDone }) {
 
       <motion.div key={idx} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
         <div className="flex items-center justify-between mb-2">
-          <p className={`text-xs font-bold uppercase tracking-wide ${colors.text}`}>What is the definition of…</p>
+          <p className={`text-xs font-bold uppercase tracking-wide ${colors.text}`}>{q.prompt}</p>
           {isXpBomb && !answered && (
             <motion.span animate={{ scale: [1, 1.15, 1] }} transition={{ repeat: Infinity, duration: 0.8 }}
               className="text-[10px] font-extrabold bg-amber-400 text-white px-2 py-0.5 rounded-full">
@@ -171,7 +196,7 @@ function QuizPhase({ terms, allTerms, colors, onDone }) {
             <span className="text-[10px] font-extrabold text-amber-500">⚡ 2× XP!</span>
           )}
         </div>
-        <p className="text-xl font-extrabold text-foreground mb-6">{q.term.term}</p>
+        <p className={`${q.big ? 'text-xl' : 'text-base leading-relaxed'} font-extrabold text-foreground mb-6`}>{q.questionText}</p>
 
         <div className="flex flex-col gap-2.5">
           {q.options.map((opt, i) => {
@@ -205,7 +230,7 @@ function QuizPhase({ terms, allTerms, colors, onDone }) {
             className={`mt-4 p-3 rounded-2xl border text-xs font-semibold leading-relaxed ${
               isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
             }`}>
-            {isCorrect ? '✓ Correct! ' : '✗ Incorrect. '}{q.term.definition}
+            {isCorrect ? '✓ Correct! ' : '✗ Incorrect. '}<strong>{q.term.term}</strong> — {q.term.definition}
           </motion.div>
         )}
       </motion.div>
@@ -272,12 +297,39 @@ function ResultsPhase({ lesson, score, total, stars, earned, colors, isRetry, on
   );
 }
 
+// ---------- No Hearts Gate ----------
+function NoHeartsScreen() {
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center gap-6">
+      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring' }}>
+        <span className="text-7xl">💔</span>
+      </motion.div>
+      <div>
+        <h2 className="text-2xl font-black text-foreground mb-2">Out of Hearts</h2>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          You've used all your hearts. Hearts refill daily, or upgrade to Pro for unlimited hearts and no limits.
+        </p>
+      </div>
+      <Link to="/pro">
+        <motion.button
+          whileTap={{ scale: 0.96 }}
+          className="bg-gradient-to-r from-amber-400 to-orange-500 text-white font-black px-8 py-4 rounded-2xl shadow-lg flex items-center gap-2 text-lg"
+        >
+          <Crown className="w-5 h-5" /> Get Unlimited Hearts
+        </motion.button>
+      </Link>
+      <Link to="/" className="text-sm text-muted-foreground underline">Back to Learn</Link>
+    </div>
+  );
+}
+
 // ---------- Main Lesson page ----------
 export default function Lesson() {
   const { id } = useParams();
   const navigate = useNavigate();
   const lesson = getLessonById(id);
   const { progress, updateProgress, newAchievements, dismissAchievements } = useUserProgress();
+  const isPro = useIsPro();
   const [phase, setPhase] = useState('study'); // study | quiz | results
   const [score, setScore] = useState(0);
   const [confetti, setConfetti] = useState(false);
@@ -286,6 +338,9 @@ export default function Lesson() {
   const [finalStreak, setFinalStreak] = useState(null);
 
   if (!lesson) return <div className="p-8 text-center text-muted-foreground">Lesson not found.</div>;
+
+  const hearts = progress?.hearts ?? 5;
+  if (!isPro && hearts === 0 && phase !== 'results') return <NoHeartsScreen />;
 
   const colors = LESSON_COLORS[lesson.color];
   const terms = lesson.terms.map(id => getTermById(id)).filter(Boolean);
@@ -352,9 +407,30 @@ export default function Lesson() {
 
       {/* Header */}
       <div className={`${colors.bg} px-4 pt-12 pb-6 text-white`}>
-        <Link to="/" className="inline-flex items-center gap-1 text-sm font-semibold opacity-80 mb-4 hover:opacity-100">
-          <ArrowLeft className="w-4 h-4" /> Path
-        </Link>
+        <div className="flex items-center justify-between mb-4">
+          <Link to="/" className="inline-flex items-center gap-1 text-sm font-semibold opacity-80 hover:opacity-100">
+            <ArrowLeft className="w-4 h-4" /> Path
+          </Link>
+          {/* Hearts display */}
+          <div className="flex items-center gap-1">
+            {isPro ? (
+              <span className="flex items-center gap-1 text-xs font-extrabold text-amber-300 bg-white/20 px-2.5 py-1 rounded-full">
+                <Crown className="w-3.5 h-3.5" /> Unlimited
+              </span>
+            ) : (
+              Array.from({ length: 5 }).map((_, i) => (
+                <motion.span
+                  key={i}
+                  initial={false}
+                  animate={{ scale: i < hearts ? 1 : 0.7, opacity: i < hearts ? 1 : 0.3 }}
+                  className="text-lg"
+                >
+                  ♥
+                </motion.span>
+              ))
+            )}
+          </div>
+        </div>
         <div className="flex items-center gap-3">
           <span className="text-4xl">{lesson.emoji}</span>
           <div>
@@ -392,6 +468,21 @@ export default function Lesson() {
                 allTerms={GLOSSARY_TERMS}
                 colors={colors}
                 onDone={handleQuizDone}
+                isPro={isPro}
+                onWrongAnswer={async () => {
+                  if (isPro) return;
+                  const current = progress?.hearts ?? 5;
+                  if (current > 0) await updateProgress({ hearts: current - 1 });
+                }}
+                onStreakHeart={async () => {
+                  const current = progress?.hearts ?? 5;
+                  if (current < 5) {
+                    await updateProgress({ hearts: current + 1 });
+                    toast.success('💖 10 in a row! +1 heart earned!');
+                  } else {
+                    toast.success('🔥 10 in a row! (hearts already full)');
+                  }
+                }}
               />
             </motion.div>
           )}

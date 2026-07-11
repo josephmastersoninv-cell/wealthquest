@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getLevelForXp } from '@/lib/levelData';
 import Confetti from '@/components/Confetti';
+import { sounds } from '@/lib/sound';
+import { haptics } from '@/lib/haptics';
 
 const LEVEL_UNLOCKS = {
   2:  '🛒 Shop unlocked',
@@ -28,6 +30,8 @@ export default function LevelUpModal({ progress }) {
       setNewLevel(current);
       setPhase('number');
       setShow(true);
+      sounds.levelUp();
+      haptics.levelUp();
     }
     prevLevel.current = current.level;
   }, [progress?.xp]);

@@ -42,14 +42,10 @@ export default function Home() {
     const already = progress.mastered_terms ?? [];
     if (already.includes(term.id)) return;
     const newMastered = [...already, term.id];
-    const { streak: s } = computeStreak(progress.last_active_date, progress.streak_days);
-    const today = new Date().toISOString().split('T')[0];
     await updateProgress({
       mastered_terms: newMastered,
       xp: (progress.xp ?? 0) + 10,
       coins: (progress.coins ?? 0) + 2,
-      streak_days: s,
-      last_active_date: today,
     });
   };
 

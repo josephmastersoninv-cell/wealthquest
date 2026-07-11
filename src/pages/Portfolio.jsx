@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { fetchLeaderboard, syncPortfolioValue, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import marketSim from '@/lib/marketSim';
 import { getCountryByCode } from '@/lib/countryData';
+import { useAuth } from '@/lib/authContext';
 import { pushPortfolio, flushNow } from '@/lib/cloudSync';
 
 const PORTFOLIO_KEY   = 'wealthquest_portfolio';
@@ -27,11 +28,6 @@ const SPEED_MULT      = 5;    // 5× amplified volatility
 // (snapshot cache is now owned by marketSim — see src/lib/marketSim.js)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function seededRand(seed) {
-  let s = seed;
-  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xFFFFFFFF; };
-}
-
 function formatIPOReturn(pct) {
   if (pct >= 1e9)  return `+${(pct / 1e9).toFixed(1)}b%`;
   if (pct >= 1e6)  return `+${(pct / 1e6).toFixed(1)}m%`;
@@ -42,40 +38,6 @@ function formatIPOReturn(pct) {
 function canAssetTrade(asset, mktStatus) {
   // Crypto trades 24/7; stocks & ETFs only during NYSE hours
   return asset.type === 'crypto' || mktStatus.canTrade;
-}
-
-// ─── Leaderboard ghost players ────────────────────────────────────────────────
-function generateLeaderboard(prices) {
-  const names = [
-    { name: 'Jake M.',  avatar: '👨‍💼', badge: '🏆' },
-    { name: 'Sofia K.', avatar: '👩‍💻', badge: '🔥' },
-    { name: 'Alex R.',  avatar: '👨‍🎓', badge: '📈' },
-    { name: 'Priya S.', avatar: '👩‍🔬', badge: '💎' },
-    { name: 'Tom B.',   avatar: '🧑‍🚀', badge: '⚡' },
-    { name: 'Lea C.',   avatar: '👩‍🏫', badge: '🌟' },
-    { name: 'Finn D.',  avatar: '🧑‍🎨', badge: '🚀' },
-    { name: 'Mia W.',   avatar: '👩‍💼', badge: '💰' },
-    { name: 'Noah T.',  avatar: '👨‍🔬', badge: '📊' },
-    { name: 'Yuki A.',  avatar: '👩‍🎤', badge: '✨' },
-  ];
-  return names.map((p, i) => {
-    const rand = seededRand(i * 31337 + 9999);
-    const cash = 10000 * (0.8 + rand() * 0.4);
-    const shuffled = [...ASSETS].sort(() => rand() - 0.5).slice(0, 2 + Math.floor(rand() * 3));
-    let value = cash;
-    let topHolding = null;
-    let topVal = 0;
-    shuffled.forEach(asset => {
-      const price = prices[asset.id]?.price ?? 100;
-      const spent = (10000 - cash) * rand();
-      const shares = spent / price;
-      const val = shares * price;
-      value += val;
-      if (val > topVal) { topVal = val; topHolding = asset; }
-    });
-    const returnPct = ((value - 10000) / 10000) * 100;
-    return { ...p, id: i, value: Math.round(value * 100) / 100, returnPct, topHolding };
-  }).sort((a, b) => b.value - a.value);
 }
 
 // ─── SVG Sparkline ────────────────────────────────────────────────────────────
@@ -1061,6 +1023,41 @@ function MarketBanner({ status }) {
   );
 }
 
+// ─── Market Closed Explainer (prominent, shown on open) ───────────────────────
+function MarketClosedExplainer({ status, onDismiss }) {
+  if (status.open) return null;
+  const meta = {
+    weekend:    { icon: '📅', title: 'Closed for the weekend' },
+    premarket:  { icon: '🌅', title: 'Before the opening bell' },
+    afterhours: { icon: '🌆', title: 'After the closing bell' },
+    overnight:  { icon: '🌙', title: 'Closed overnight' },
+  }[status.reason] ?? { icon: '🔔', title: 'Market closed' };
+  return (
+    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+      className="px-4 pt-3 overflow-hidden">
+      <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 p-4">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl shrink-0">{meta.icon}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-extrabold text-foreground text-sm">{meta.title}</p>
+              <button onClick={onDismiss} className="text-muted-foreground shrink-0"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{status.reasonText}</p>
+            <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+              {status.countdown && (
+                <span className="text-[11px] font-extrabold text-rose-400 bg-rose-500/15 rounded-lg px-2 py-1">⏱ Opens in {status.countdown}</span>
+              )}
+              <span className="text-[11px] font-bold text-muted-foreground bg-muted rounded-lg px-2 py-1">Regular hours · Mon–Fri 9:30–16:00 ET</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2.5">💡 Stocks & ETFs are frozen while closed — but crypto trades 24/7, so you can still trade coins.</p>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Market Mood ──────────────────────────────────────────────────────────────
 function MarketMood({ prices }) {
   const list = ASSETS.filter(a => prices[a.id]);
@@ -1315,6 +1312,7 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Portfolio() {
   const { progress } = useUserProgress();
+  const { player: authPlayer } = useAuth();
   const [prices, setPrices]       = useState(() => ({ ...marketSim.prices }));
   const [loading, setLoading]     = useState(() => Object.keys(marketSim.prices).length === 0);
   const [refreshing, setRefreshing] = useState(false);
@@ -1334,6 +1332,7 @@ export default function Portfolio() {
   const [milestone, setMilestone] = useState(null);
   const [realPlayers, setRealPlayers] = useState([]);
   const [marketStatus, setMarketStatus] = useState(getMarketStatus);
+  const [showClosedInfo, setShowClosedInfo] = useState(true);
   const [portfolioSnapshots, setPortfolioSnapshots] = useState(() => [...marketSim.snapshots]);
   const portfolioRef = useRef(null);
   // Research tab
@@ -1653,27 +1652,40 @@ export default function Portfolio() {
 
   const myPlayerId   = getMyPlayerId();
   const myPlayerData = getMyPlayerData();
+  // "me" can be identified by auth id (real Supabase row) or the local player id.
+  const myId = authPlayer?.id ?? myPlayerId;
 
   const leaderboard = useMemo(() => {
-    const ghosts = Object.keys(prices).length ? generateLeaderboard(prices) : [];
-    if (!realPlayers.length) return ghosts;
-    const others = realPlayers
-      .filter(p => p.id !== myPlayerId)
+    // Real signed-in players only — exclude my own row (matched by either id).
+    return realPlayers
+      .filter(p => p.id !== myId && p.id !== myPlayerId)
       .map(p => ({
         id: p.id, name: p.name, avatar: p.avatar,
         value: Number(p.portfolio_value),
         returnPct: ((Number(p.portfolio_value) - 10000) / 10000) * 100,
         topHolding: null, real: true, countryCode: p.country_code,
-      }));
-    const padded = others.length < 5 ? [...others, ...ghosts.slice(0, 10 - others.length)] : others;
-    return padded.sort((a, b) => b.value - a.value);
-  }, [realPlayers, prices, myPlayerId]);
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [realPlayers, myId, myPlayerId]);
+
+  // Full ranking with "me" inserted in the correct spot by portfolio value.
+  const rankedList = useMemo(() => {
+    const me = {
+      id: 'me',
+      name: authPlayer?.name ?? myPlayerData?.name ?? 'You',
+      avatar: authPlayer?.avatar ?? myPlayerData?.avatar,
+      value: totalValue,
+      returnPct: totalGainPct,
+      real: true, isMe: true,
+      countryCode: authPlayer?.country_code ?? myPlayerData?.country_code,
+    };
+    return [...leaderboard, me].sort((a, b) => b.value - a.value);
+  }, [leaderboard, totalValue, totalGainPct, authPlayer, myPlayerData]);
 
   const myRank = useMemo(() => {
-    if (!leaderboard.length) return null;
-    const r = leaderboard.findIndex(p => totalValue > p.value);
-    return r === -1 ? leaderboard.length + 1 : r + 1;
-  }, [leaderboard, totalValue]);
+    const idx = rankedList.findIndex(p => p.isMe);
+    return idx === -1 ? null : idx + 1;
+  }, [rankedList]);
 
   function savePortfolio(p) {
     localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p));
@@ -1734,8 +1746,12 @@ export default function Portfolio() {
       if (s.shares < 0.000001) p.shorts = p.shorts.filter(x => x.assetId !== asset.id);
     }
 
-    p.trades.push({ type: mode, assetId: asset.id, shares, price, ts: Date.now() });
+    const tradeTs = Date.now();
+    p.trades.push({ type: mode, assetId: asset.id, shares, price, ts: tradeTs });
     savePortfolio(p);
+
+    // Learning bridge: after a buy, ask WHY — later we score each strategy
+    if (mode === 'buy') setTimeout(() => setRationaleFor(tradeTs), 1400);
 
     setTimeout(() => {
       const inv = p.holdings.reduce((sum, h) => sum + (prices[h.assetId]?.price ?? h.avgCost) * h.shares, 0);
@@ -1907,6 +1923,13 @@ export default function Portfolio() {
           />
         </div>
       </div>
+
+      {/* Prominent closed-market explainer (shown when you open Portfolio) */}
+      <AnimatePresence>
+        {!marketStatus.open && showClosedInfo && (
+          <MarketClosedExplainer status={marketStatus} onDismiss={() => setShowClosedInfo(false)} />
+        )}
+      </AnimatePresence>
 
       {/* Tabs */}
       <div className="flex border-b border-border bg-card px-4">
@@ -2698,29 +2721,35 @@ export default function Portfolio() {
 
             <div className="space-y-2">
               {loading ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-2xl animate-pulse" />) : (
-                leaderboard.map((player, i) => {
-                  const country = player.real ? getCountryByCode(player.countryCode) : null;
+                leaderboard.length === 0 ? (
+                  <div className="border-2 border-dashed border-border rounded-2xl py-8 text-center">
+                    <p className="text-3xl mb-2">🌍</p>
+                    <p className="text-sm font-extrabold text-foreground">You're first in line</p>
+                    <p className="text-xs text-muted-foreground mt-1">Real players will appear here as they build their portfolios.</p>
+                  </div>
+                ) :
+                rankedList.map((player, i) => {
+                  const country = getCountryByCode(player.countryCode);
                   return (
-                    <div key={player.id} className="flex items-center gap-3 bg-card border border-border rounded-2xl px-4 py-3">
+                    <div key={player.id} className={`flex items-center gap-3 rounded-2xl px-4 py-3 border ${player.isMe ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30' : 'bg-card border-border'}`}>
                       <div className="w-7 text-center shrink-0">
                         {i === 0 ? <Crown className="w-5 h-5 text-amber-400 mx-auto" />
                           : i === 1 ? <span className="text-sm">🥈</span>
                           : i === 2 ? <span className="text-sm">🥉</span>
-                          : <span className="text-xs font-extrabold text-muted-foreground">#{i + 1}</span>}
+                          : <span className={`text-xs font-extrabold ${player.isMe ? 'text-primary' : 'text-muted-foreground'}`}>#{i + 1}</span>}
                       </div>
                       <span className="text-xl shrink-0">{player.avatar}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-extrabold text-foreground">{player.name}</p>
-                          {player.real && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded-full">LIVE</span>}
+                          <p className={`text-sm font-extrabold truncate ${player.isMe ? 'text-primary' : 'text-foreground'}`}>{player.isMe ? 'You' : player.name}</p>
+                          {player.isMe
+                            ? <span className="text-[10px] bg-primary/20 text-primary font-bold px-1.5 py-0.5 rounded-full">YOU</span>
+                            : <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded-full">LIVE</span>}
                           {country && <span className="text-sm">{country.flag}</span>}
                         </div>
-                        {!player.real && player.topHolding && (
-                          <p className="text-xs text-muted-foreground">Top: {player.topHolding.emoji} {player.topHolding.symbol}</p>
-                        )}
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-extrabold text-foreground">${player.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                        <p className="text-sm font-extrabold text-foreground">${player.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         <p className={`text-xs font-bold ${player.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {player.returnPct >= 0 ? '+' : ''}{player.returnPct.toFixed(1)}%
                         </p>

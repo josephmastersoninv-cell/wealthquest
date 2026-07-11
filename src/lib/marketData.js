@@ -470,6 +470,26 @@ export function getMarketStatus() {
     return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
   };
 
+  // Why is it closed? (weekend / after-hours / pre-market / overnight)
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  let reason = 'open';
+  let reasonText = '';
+  if (!isOpen) {
+    if (!isWD) {
+      reason = 'weekend';
+      reasonText = `It's the weekend (${DAY_NAMES[day]}) — the NYSE is closed Saturday and Sunday.`;
+    } else if (isPre) {
+      reason = 'premarket';
+      reasonText = "It's before the 9:30 AM opening bell — the regular session hasn't started yet.";
+    } else if (isAH) {
+      reason = 'afterhours';
+      reasonText = 'The 4:00 PM closing bell has rung — the regular session is over for today.';
+    } else {
+      reason = 'overnight';
+      reasonText = 'The market is closed overnight between trading days.';
+    }
+  }
+
   return {
     open: isOpen,
     preMarket: isPre,
@@ -480,6 +500,8 @@ export function getMarketStatus() {
     minutesLeft: isOpen ? CLOSE - min : null,
     countdown: fmt(minsUntilOpen),
     nyTime: `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} ET`,
+    reason,
+    reasonText,
   };
 }
 

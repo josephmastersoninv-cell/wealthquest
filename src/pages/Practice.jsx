@@ -5,6 +5,7 @@ import { ArrowLeft, Swords, CheckCircle2, XCircle, ChevronRight, Heart, Zap, Rot
 import { GLOSSARY_TERMS } from '@/lib/glossaryData';
 import { Button } from '@/components/ui/button';
 import { useUserProgress } from '@/lib/useUserProgress';
+import { useIsPro } from '@/lib/useIsPro';
 import { computeStreak } from '@/lib/streakUtils';
 import { toast } from 'sonner';
 import AchievementToast from '@/components/AchievementToast';
@@ -45,6 +46,7 @@ function generatePracticeQuestions(count) {
 
 export default function Practice() {
   const { progress, updateProgress, newAchievements, dismissAchievements } = useUserProgress();
+  const isPro = useIsPro();
   const [phase, setPhase] = useState('intro');
   const [questions, setQuestions] = useState([]);
   const [currentQ, setCurrentQ] = useState(0);
@@ -88,7 +90,7 @@ export default function Practice() {
     } else {
       setCombo(0);
       setShowCombo(false);
-      setHeartsLeft((h) => Math.max(0, h - 1));
+      if (!isPro) setHeartsLeft((h) => Math.max(0, h - 1));
       setLastXp(0);
     }
   };
@@ -114,12 +116,12 @@ export default function Practice() {
       if (progress) {
         const today = new Date().toISOString().split('T')[0];
         const { streak } = computeStreak(progress.last_active_date, progress.streak_days);
-        const heartsLost = hearts - heartsLeft - (correct ? 0 : 1);
-        const finalHearts = Math.max(0, hearts - Math.max(0, heartsLost));
+        // heartsLeft is the live per-session counter (already decremented per wrong answer)
+        const finalHearts = isPro ? hearts : Math.max(0, Math.min(5, heartsLeft));
         await updateProgress({
           xp: (progress.xp ?? 0) + newXpTotal,
           coins: (progress.coins ?? 0) + score,
-          hearts: Math.min(5, finalHearts),
+          hearts: finalHearts,
           practice_sessions: (progress.practice_sessions ?? 0) + 1,
           streak_days: streak,
           last_active_date: today,
@@ -175,8 +177,8 @@ export default function Practice() {
                 </ul>
               </div>
 
-              <Button onClick={startPractice} disabled={hearts <= 0} className="w-full h-14 text-base font-extrabold rounded-2xl">
-                {hearts <= 0 ? 'No Hearts Left — Come Back Tomorrow' : 'Start Practice'}
+              <Button onClick={startPractice} disabled={!isPro && hearts <= 0} className="w-full h-14 text-base font-extrabold rounded-2xl">
+                {!isPro && hearts <= 0 ? 'No Hearts Left — Come Back Tomorrow' : 'Start Practice'}
               </Button>
             </div>
           </motion.div>

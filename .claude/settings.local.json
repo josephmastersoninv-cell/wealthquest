@@ -24,7 +24,12 @@
       "Bash(npm list *)",
       "mcp__visualize__read_me",
       "mcp__visualize__show_widget",
-      "Bash(xargs sed -i '' -e 's/WealthQuest Pro/Monelingo Pro/g' -e s/WealthQuest/Monelingo/g -e 's|https://wealthquest-eta\\\\.vercel\\\\.app|https://monelingo.vercel.app|g')"
+      "Bash(xargs sed -i '' -e 's/WealthQuest Pro/Monelingo Pro/g' -e s/WealthQuest/Monelingo/g -e 's|https://wealthquest-eta\\\\.vercel\\\\.app|https://monelingo.vercel.app|g')",
+      "Bash(git rm *)",
+      "Bash(grep -n \"AnimatePresence\\\\|</motion\\\\|</div>\\\\s*$\" /Users/josephmasterson/Downloads/wealthquest/src/pages/League.jsx)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(echo \"---exit $?---\")"
     ]
   }
 }

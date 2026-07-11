@@ -4,6 +4,7 @@ import { shouldRefillHearts } from '@/lib/streakUtils';
 import { getLevelForXp } from '@/lib/levelData';
 import { checkNewAchievements } from '@/lib/achievementData';
 import { addTodayXp } from '@/lib/dailyGoal';
+import { syncXp } from '@/lib/playerSync';
 
 const DEFAULT_PROGRESS = {
   xp: 0,
@@ -88,6 +89,8 @@ export function useUserProgress() {
       const prev = prevProgress.current?.xp ?? 0;
       const gained = updates.xp - prev;
       if (gained > 0) addTodayXp(gained);
+      // Push XP to the online league so rankings stay live (debounced, fire-and-forget)
+      syncXp(updates.xp);
     }
 
     const updated = await base44.entities.UserProgress.update(progressId, updates);

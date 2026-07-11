@@ -50,14 +50,14 @@ export async function fetchCountryTotals() {
   if (!isConfigured || !supabase) return null;
   const { data } = await supabase
     .from('players')
-    .select('country_code, xp')
+    .select('country_code, portfolio_value')
     .not('country_code', 'is', null);
   if (!data) return null;
   const totals = {};
   data.forEach(p => {
     if (!p.country_code) return;
     if (!totals[p.country_code]) totals[p.country_code] = { total: 0, count: 0 };
-    totals[p.country_code].total += Number(p.xp ?? 0);
+    totals[p.country_code].total += Number(p.portfolio_value ?? 0);
     totals[p.country_code].count += 1;
   });
   return totals;
@@ -79,6 +79,23 @@ export async function syncPortfolioValue(portfolioValue, xp = 0) {
     .eq('id', user.id);
 }
 
+// ── XP-only sync (called whenever XP changes, so league ranks stay live) ───────
+
+let _xpSyncTimer = null;
+export function syncXp(xp) {
+  if (!isConfigured || !supabase) return;
+  // Debounce: rapid XP gains (quiz answers) collapse into one write
+  clearTimeout(_xpSyncTimer);
+  _xpSyncTimer = setTimeout(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase
+      .from('players')
+      .update({ xp, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+  }, 2000);
+}
+
 // ── Username availability check ────────────────────────────────────────────────
 
 export async function checkUsernameAvailable(name) {
@@ -89,6 +106,18 @@ export async function checkUsernameAvailable(name) {
     .ilike('name', name)
     .limit(1);
   return !data || data.length === 0;
+}
+
+// ── Players by country (for drill-down sheet) ─────────────────────────────────
+export async function fetchPlayersByCountry(countryCode) {
+  if (!isConfigured || !supabase) return [];
+  const { data } = await supabase
+    .from('players')
+    .select('id, name, avatar, xp, country_code')
+    .eq('country_code', countryCode)
+    .order('xp', { ascending: false })
+    .limit(50);
+  return data ?? [];
 }
 
 // ── Unit learner counts ────────────────────────────────────────────────────────

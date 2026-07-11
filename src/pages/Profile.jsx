@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Moon, Sun, Shield, Zap, Flame, Heart, Trophy, Star, BookOpen, Target, ChevronRight, Check, Crown, Share2, Globe, LogOut } from 'lucide-react';
+import { Moon, Sun, Shield, Zap, Flame, Heart, Trophy, Star, BookOpen, Target, ChevronRight, Check, Crown, Share2, Globe, LogOut, Volume2, VolumeX, Smartphone } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useUserProgress } from '@/lib/useUserProgress';
+import { useIsPro } from '@/lib/useIsPro';
 import { useTheme } from '@/lib/themeContext';
 import { getLevelForXp, getXpProgress, LEVELS } from '@/lib/levelData';
 import { ACHIEVEMENTS, RARITY_COLOR, RARITY_LABEL } from '@/lib/achievementData';
@@ -10,6 +11,8 @@ import { DAILY_GOALS, getGoalConfig, setDailyGoal, getDailyGoal, hasStreakFreeze
 import { TOTAL_LESSONS } from '@/lib/unitData';
 import { getMultiplierLabel } from '@/lib/streakMultiplier';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
+import { isSoundEnabled, toggleSound, sounds } from '@/lib/sound';
+import { isHapticsEnabled, toggleHaptics, haptics } from '@/lib/haptics';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/authContext';
 
@@ -69,6 +72,7 @@ function CountryPicker({ onSelect, onClose }) {
 
 export default function Profile() {
   const { progress, updateProgress } = useUserProgress();
+  const isPro = useIsPro();
   const { dark, toggle: toggleTheme } = useTheme();
   const { user, player, signOut, updatePlayer, isAuthenticated } = useAuth();
   const [goalId, setGoalIdState] = useState(getDailyGoal);
@@ -79,6 +83,19 @@ export default function Profile() {
   const [myCountry, setMyCountryState] = useState(() => player?.country_code ?? getMyCountry());
   const [showPicker, setShowPicker] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [soundOn, setSoundOn] = useState(isSoundEnabled);
+  const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled);
+
+  function handleToggleSound() {
+    const next = toggleSound();
+    setSoundOn(next);
+    if (next) sounds.correct();
+  }
+  function handleToggleHaptics() {
+    const next = toggleHaptics();
+    setHapticsOn(next);
+    if (next) haptics.correct();
+  }
 
   const xp            = progress?.xp ?? 0;
   const coins         = progress?.coins ?? 0;
@@ -243,12 +260,19 @@ export default function Profile() {
 
           {/* Action buttons */}
           <div className="flex gap-2">
-            <Link to="/pro" className="flex-1">
-              <div className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl py-2.5 active:scale-95">
-                <Crown className="w-4 h-4 text-white" />
-                <span className="text-white font-extrabold text-sm">Upgrade Pro</span>
+            {isPro ? (
+              <div className="flex-1 flex items-center justify-center gap-2 bg-white/20 rounded-2xl py-2.5">
+                <Crown className="w-4 h-4 text-amber-300" />
+                <span className="text-white font-extrabold text-sm">Pro Member ✓</span>
               </div>
-            </Link>
+            ) : (
+              <Link to="/pro" className="flex-1">
+                <div className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl py-2.5 active:scale-95">
+                  <Crown className="w-4 h-4 text-white" />
+                  <span className="text-white font-extrabold text-sm">Upgrade Pro</span>
+                </div>
+              </Link>
+            )}
             <button onClick={shareReferral} className="flex items-center gap-2 bg-white/20 rounded-2xl px-4 py-2.5 active:scale-95">
               <Share2 className="w-4 h-4 text-white" />
               <span className="text-white font-extrabold text-sm">Invite</span>
@@ -414,6 +438,24 @@ export default function Profile() {
               </div>
               <div className={`w-11 h-6 rounded-full relative transition-colors ${dark ? 'bg-primary' : 'bg-muted'}`}>
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${dark ? 'translate-x-6' : 'translate-x-1'}`} />
+              </div>
+            </button>
+            <button onClick={handleToggleSound} className="w-full flex items-center justify-between px-4 py-3.5 text-left">
+              <div className="flex items-center gap-3">
+                {soundOn ? <Volume2 className="w-4 h-4 text-emerald-500" /> : <VolumeX className="w-4 h-4 text-muted-foreground" />}
+                <span className="text-sm font-bold text-foreground">Sound Effects</span>
+              </div>
+              <div className={`w-11 h-6 rounded-full relative transition-colors ${soundOn ? 'bg-primary' : 'bg-muted'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${soundOn ? 'translate-x-6' : 'translate-x-1'}`} />
+              </div>
+            </button>
+            <button onClick={handleToggleHaptics} className="w-full flex items-center justify-between px-4 py-3.5 text-left">
+              <div className="flex items-center gap-3">
+                <Smartphone className={`w-4 h-4 ${hapticsOn ? 'text-emerald-500' : 'text-muted-foreground'}`} />
+                <span className="text-sm font-bold text-foreground">Haptic Feedback</span>
+              </div>
+              <div className={`w-11 h-6 rounded-full relative transition-colors ${hapticsOn ? 'bg-primary' : 'bg-muted'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${hapticsOn ? 'translate-x-6' : 'translate-x-1'}`} />
               </div>
             </button>
             <button onClick={() => setShowAvatarPicker(true)} className="w-full flex items-center justify-between px-4 py-3.5 text-left">

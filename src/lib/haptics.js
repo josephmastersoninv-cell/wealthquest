@@ -1,4 +1,16 @@
+const ENABLED_KEY = 'wealthquest_haptics';
+
+export function isHapticsEnabled() {
+  return localStorage.getItem(ENABLED_KEY) !== 'false';
+}
+export function toggleHaptics() {
+  const next = !isHapticsEnabled();
+  localStorage.setItem(ENABLED_KEY, String(next));
+  return next;
+}
+
 export function vibrate(pattern) {
+  if (!isHapticsEnabled()) return;
   try { navigator.vibrate?.(pattern); } catch {}
 }
 

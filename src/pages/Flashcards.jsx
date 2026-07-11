@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, XCircle, ChevronUp, ChevronDown, Shuffle, Target } from 'lucide-react';
 import { GLOSSARY_TERMS, GLOSSARY_CATEGORIES } from '@/lib/glossaryData';
 import { useUserProgress } from '@/lib/useUserProgress';
-import { computeStreak } from '@/lib/streakUtils';
 import { toast } from 'sonner';
 import AchievementToast from '@/components/AchievementToast';
 
@@ -18,14 +17,28 @@ function shuffleArray(arr) {
 }
 
 const CATEGORY_THEMES = {
-  'Investing':   { bg: 'from-violet-700 via-purple-800 to-indigo-900', accent: 'text-violet-300', badge: 'bg-violet-500/30 text-violet-200', emoji: '📈' },
-  'Banking':     { bg: 'from-blue-700 via-blue-800 to-slate-900',      accent: 'text-blue-300',   badge: 'bg-blue-500/30 text-blue-200',   emoji: '🏦' },
-  'Credit':      { bg: 'from-rose-700 via-red-800 to-slate-900',       accent: 'text-rose-300',   badge: 'bg-rose-500/30 text-rose-200',   emoji: '💳' },
-  'Budgeting':   { bg: 'from-emerald-700 via-green-800 to-slate-900',  accent: 'text-emerald-300',badge: 'bg-emerald-500/30 text-emerald-200', emoji: '📊' },
-  'Taxes':       { bg: 'from-amber-600 via-orange-700 to-slate-900',   accent: 'text-amber-300',  badge: 'bg-amber-500/30 text-amber-200', emoji: '🧾' },
-  'Insurance':   { bg: 'from-indigo-700 via-blue-800 to-slate-900',    accent: 'text-indigo-300', badge: 'bg-indigo-500/30 text-indigo-200',emoji: '🛡️' },
-  'Real Estate': { bg: 'from-orange-700 via-amber-800 to-slate-900',   accent: 'text-orange-300', badge: 'bg-orange-500/30 text-orange-200',emoji: '🏠' },
-  'Economics':   { bg: 'from-teal-700 via-cyan-800 to-slate-900',      accent: 'text-teal-300',   badge: 'bg-teal-500/30 text-teal-200',  emoji: '🌍' },
+  'Foundations':          { bg: 'from-emerald-700 via-teal-800 to-slate-900',    accent: 'text-emerald-300', badge: 'bg-emerald-500/30 text-emerald-200', emoji: '🏛️' },
+  'Stocks':               { bg: 'from-violet-700 via-purple-800 to-indigo-900',  accent: 'text-violet-300',  badge: 'bg-violet-500/30 text-violet-200',   emoji: '📈' },
+  'Fixed Income':         { bg: 'from-blue-700 via-blue-800 to-slate-900',       accent: 'text-blue-300',    badge: 'bg-blue-500/30 text-blue-200',       emoji: '🏦' },
+  'Funds':                { bg: 'from-cyan-700 via-cyan-800 to-slate-900',        accent: 'text-cyan-300',    badge: 'bg-cyan-500/30 text-cyan-200',       emoji: '🧺' },
+  'Risk':                 { bg: 'from-rose-700 via-red-800 to-slate-900',         accent: 'text-rose-300',    badge: 'bg-rose-500/30 text-rose-200',       emoji: '⚠️' },
+  'Macro':                { bg: 'from-teal-700 via-cyan-800 to-slate-900',        accent: 'text-teal-300',    badge: 'bg-teal-500/30 text-teal-200',       emoji: '🌍' },
+  'Behavioral':           { bg: 'from-pink-700 via-rose-800 to-slate-900',        accent: 'text-pink-300',    badge: 'bg-pink-500/30 text-pink-200',       emoji: '🧠' },
+  'Technical Analysis':   { bg: 'from-yellow-700 via-amber-800 to-slate-900',     accent: 'text-yellow-300',  badge: 'bg-yellow-500/30 text-yellow-200',   emoji: '📉' },
+  'Fundamental Analysis': { bg: 'from-lime-700 via-green-800 to-slate-900',       accent: 'text-lime-300',    badge: 'bg-lime-500/30 text-lime-200',       emoji: '🔍' },
+  'Derivatives':          { bg: 'from-orange-700 via-amber-800 to-slate-900',     accent: 'text-orange-300',  badge: 'bg-orange-500/30 text-orange-200',   emoji: '🔄' },
+  'Alternative Assets':   { bg: 'from-purple-700 via-violet-800 to-slate-900',    accent: 'text-purple-300',  badge: 'bg-purple-500/30 text-purple-200',   emoji: '💎' },
+  'Strategy':             { bg: 'from-slate-600 via-slate-700 to-slate-900',      accent: 'text-slate-300',   badge: 'bg-slate-500/30 text-slate-200',     emoji: '♟️' },
+  'Corporate Finance':    { bg: 'from-sky-700 via-blue-800 to-slate-900',         accent: 'text-sky-300',     badge: 'bg-sky-500/30 text-sky-200',         emoji: '🏗️' },
+  'Portfolio Theory':     { bg: 'from-indigo-700 via-purple-800 to-slate-900',    accent: 'text-indigo-300',  badge: 'bg-indigo-500/30 text-indigo-200',   emoji: '📊' },
+  'Real Estate':          { bg: 'from-amber-700 via-orange-800 to-slate-900',     accent: 'text-amber-300',   badge: 'bg-amber-500/30 text-amber-200',     emoji: '🏠' },
+  'Crypto & Fintech':     { bg: 'from-fuchsia-700 via-purple-800 to-slate-900',   accent: 'text-fuchsia-300', badge: 'bg-fuchsia-500/30 text-fuchsia-200', emoji: '₿' },
+  'Insurance':            { bg: 'from-blue-700 via-indigo-800 to-slate-900',      accent: 'text-blue-300',    badge: 'bg-blue-500/30 text-blue-200',       emoji: '🛡️' },
+  'Tax Strategy':         { bg: 'from-amber-600 via-orange-700 to-slate-900',     accent: 'text-amber-300',   badge: 'bg-amber-500/30 text-amber-200',     emoji: '🧾' },
+  'Retirement':           { bg: 'from-green-700 via-emerald-800 to-slate-900',    accent: 'text-green-300',   badge: 'bg-green-500/30 text-green-200',     emoji: '🌅' },
+  'ESG':                  { bg: 'from-emerald-600 via-green-700 to-teal-900',     accent: 'text-emerald-200', badge: 'bg-emerald-500/30 text-emerald-100', emoji: '🌱' },
+  'Banking':              { bg: 'from-blue-700 via-blue-800 to-slate-900',        accent: 'text-blue-300',    badge: 'bg-blue-500/30 text-blue-200',       emoji: '🏦' },
+  'Advanced Trading':     { bg: 'from-red-700 via-rose-800 to-slate-900',         accent: 'text-red-300',     badge: 'bg-red-500/30 text-red-200',         emoji: '⚡' },
 };
 const DEFAULT_THEME = { bg: 'from-slate-700 via-slate-800 to-slate-900', accent: 'text-slate-300', badge: 'bg-slate-500/30 text-slate-200', emoji: '💡' };
 const getTheme = (cat) => CATEGORY_THEMES[cat] ?? DEFAULT_THEME;
@@ -45,7 +58,7 @@ function FlashCard({ term, index, total, isMastered, onKnow, onDontKnow, isActiv
 
       {/* Top bar */}
       <div className="relative z-20 flex items-center justify-between px-5 pt-5 pb-3">
-        <span className={`text-xs font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-full ${theme.badge}`}>
+        <span className={`text-xs font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-full max-w-[60%] truncate ${theme.badge}`}>
           {theme.emoji} {term.category}
         </span>
         <div className="flex items-center gap-2">
@@ -124,7 +137,7 @@ function FlashCard({ term, index, total, isMastered, onKnow, onDontKnow, isActiv
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 30 }}
             transition={{ duration: 0.2 }}
-            className="relative z-20 flex gap-3 px-5 pb-8"
+            className="relative z-20 flex gap-3 px-5 pb-24"
           >
             <button
               onClick={(e) => { e.stopPropagation(); onDontKnow(); }}
@@ -223,26 +236,18 @@ export default function Flashcards() {
     const alreadyMastered = mastered.has(termId);
     const xpGain = alreadyMastered ? 0 : 10;
     const newMastered = alreadyMastered ? [...mastered] : [...mastered, termId];
-    const { streak } = computeStreak(progress.last_active_date, progress.streak_days);
-    const today = new Date().toISOString().split('T')[0];
     await updateProgress({
       mastered_terms: newMastered,
       xp: (progress.xp ?? 0) + xpGain,
       coins: (progress.coins ?? 0) + (alreadyMastered ? 0 : 2),
-      streak_days: streak,
-      last_active_date: today,
     });
     if (!alreadyMastered) toast.success(`+${xpGain} XP · Term mastered! 🎉`, { duration: 1200 });
     scrollTo(activeIndex + 1);
   }, [progress, mastered, activeIndex, updateProgress]);
 
   const markDontKnow = useCallback(async () => {
-    if (!progress) { scrollTo(activeIndex + 1); return; }
-    const today = new Date().toISOString().split('T')[0];
-    const { streak } = computeStreak(progress.last_active_date, progress.streak_days);
-    await updateProgress({ streak_days: streak, last_active_date: today });
     scrollTo(activeIndex + 1);
-  }, [progress, activeIndex, updateProgress]);
+  }, [activeIndex]);
 
   const masteredCount = terms.filter(t => mastered.has(t.id)).length;
   const pct = terms.length ? Math.round(masteredCount / terms.length * 100) : 0;

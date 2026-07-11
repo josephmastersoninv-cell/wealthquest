@@ -4,14 +4,15 @@ import { Award, CheckCircle2, XCircle, ChevronRight, BookOpen, Zap, DollarSign, 
 import { generateExamQuestions, getExamResult, EXAM_REWARDS } from '@/lib/examData';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { Button } from '@/components/ui/button';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { TOTAL_LESSONS } from '@/lib/unitData';
 import { computeStreak } from '@/lib/streakUtils';
 import AchievementToast from '@/components/AchievementToast';
 import LevelUpModal from '@/components/LevelUpModal';
 import Confetti from '@/components/Confetti';
 
-const TOTAL_QUESTIONS = 25;
+const TOTAL_QUESTIONS = 50;
 const MAX_RETRIES = 3;
 
 function ExamIntro({ onStart, attemptsLeft, bestScore }) {
@@ -247,6 +248,7 @@ function ExamResults({ score, total, answers, questions, onRestart, onReview, re
 }
 
 export default function Exam() {
+  const navigate = useNavigate();
   const { progress, updateProgress, newAchievements, dismissAchievements } = useUserProgress();
   const [phase, setPhase] = useState('intro'); // 'intro' | 'exam' | 'results'
   const [questions, setQuestions] = useState([]);
@@ -256,6 +258,15 @@ export default function Exam() {
   const [answered, setAnswered] = useState(false);
   const [rewarded, setRewarded] = useState(null);
   const [confetti, setConfetti] = useState(false);
+
+  const completedLessons = progress?.completed_lessons ?? [];
+  const allDone = completedLessons.length >= TOTAL_LESSONS;
+
+  useEffect(() => {
+    if (progress !== null && !allDone) {
+      navigate('/', { replace: true });
+    }
+  }, [progress, allDone, navigate]);
 
   const attemptsUsed = progress?.exam_attempts || 0;
   const attemptsLeft = MAX_RETRIES - attemptsUsed;
@@ -272,9 +283,17 @@ export default function Exam() {
     setPhase('exam');
   };
 
-  const handleAnswer = (index) => {
+  const handleAnswer = async (index) => {
     setSelectedIndex(index);
     setAnswered(true);
+    const isWrong = index !== questions[currentQ]?.correct;
+    if (isWrong) {
+      const currentHearts = progress?.hearts ?? 5;
+      if (currentHearts > 0) {
+        await updateProgress({ hearts: currentHearts - 1 });
+        toast.error('💔 Wrong! −1 heart');
+      }
+    }
   };
 
   const handleNext = async () => {

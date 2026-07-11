@@ -1,22 +1,32 @@
-// Arena — daily stock prediction game
-// Each day 5 stocks are selected. Players pick UP or DOWN.
-// Results reveal after a 1-hour lock. Correct picks earn portfolio money + XP.
+// Arena — daily stock prediction game resolved against REAL market prices.
+// Each day 5 assets are selected. Players pick UP or DOWN; entry prices are
+// snapshotted at lock-in and compared to live prices at reveal (1 hour later).
+// Weekends feature crypto only (NYSE is closed, so stock prices don't move).
+// Reading the daily briefing before locking in grants +50% XP on wins.
+
+import marketSim from './marketSim';
 
 const KEY_PICKS   = 'wealthquest_arena_picks';
 const KEY_RESULTS = 'wealthquest_arena_results';
 const LOCK_MS     = 60 * 60 * 1000; // 1 hour before results
 
+export const BRIEFING_XP_MULT = 1.5;
+
 export const ARENA_STOCKS = [
-  { symbol: 'AAPL',    name: 'Apple',      emoji: '🍎' },
-  { symbol: 'TSLA',    name: 'Tesla',      emoji: '⚡' },
-  { symbol: 'MSFT',    name: 'Microsoft',  emoji: '🪟' },
-  { symbol: 'GOOGL',   name: 'Alphabet',   emoji: '🔍' },
-  { symbol: 'META',    name: 'Meta',       emoji: '📘' },
-  { symbol: 'NVDA',    name: 'NVIDIA',     emoji: '🟢' },
-  { symbol: 'AMZN',    name: 'Amazon',     emoji: '📦' },
-  { symbol: 'NFLX',    name: 'Netflix',    emoji: '🎬' },
-  { symbol: 'BTC-USD', name: 'Bitcoin',    emoji: '₿'  },
-  { symbol: 'ETH-USD', name: 'Ethereum',   emoji: '💎' },
+  { symbol: 'AAPL',     assetId: 'AAPL',     name: 'Apple',     emoji: '🍎', type: 'stock'  },
+  { symbol: 'TSLA',     assetId: 'TSLA',     name: 'Tesla',     emoji: '⚡', type: 'stock'  },
+  { symbol: 'MSFT',     assetId: 'MSFT',     name: 'Microsoft', emoji: '🪟', type: 'stock'  },
+  { symbol: 'GOOGL',    assetId: 'GOOGL',    name: 'Alphabet',  emoji: '🔍', type: 'stock'  },
+  { symbol: 'META',     assetId: 'META',     name: 'Meta',      emoji: '📘', type: 'stock'  },
+  { symbol: 'NVDA',     assetId: 'NVDA',     name: 'NVIDIA',    emoji: '🟢', type: 'stock'  },
+  { symbol: 'AMZN',     assetId: 'AMZN',     name: 'Amazon',    emoji: '📦', type: 'stock'  },
+  { symbol: 'NFLX',     assetId: 'NFLX',     name: 'Netflix',   emoji: '🎬', type: 'stock'  },
+  { symbol: 'BTC-USD',  assetId: 'bitcoin',  name: 'Bitcoin',   emoji: '₿',  type: 'crypto' },
+  { symbol: 'ETH-USD',  assetId: 'ethereum', name: 'Ethereum',  emoji: '💎', type: 'crypto' },
+  { symbol: 'SOL-USD',  assetId: 'solana',   name: 'Solana',    emoji: '☀️', type: 'crypto' },
+  { symbol: 'XRP-USD',  assetId: 'ripple',   name: 'XRP',       emoji: '🌊', type: 'crypto' },
+  { symbol: 'ADA-USD',  assetId: 'cardano',  name: 'Cardano',   emoji: '🔷', type: 'crypto' },
+  { symbol: 'DOGE-USD', assetId: 'dogecoin', name: 'Dogecoin',  emoji: '🐕', type: 'crypto' },
 ];
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
@@ -32,11 +42,19 @@ function hashStr(str) {
   return h >>> 0;
 }
 
-// 5 stocks for today — deterministic, same for all players
+// Is today a weekend in NY? (stocks won't move → crypto-only arena)
+export function isWeekendArena() {
+  const nyDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay();
+  return nyDay === 0 || nyDay === 6;
+}
+
+// 5 assets for today — deterministic, same for all players
 export function getTodayArenaStocks() {
   const day = Math.floor(Date.now() / 86400000);
   const rand = seededRand(day * 1337);
-  const pool = [...ARENA_STOCKS];
+  const pool = isWeekendArena()
+    ? ARENA_STOCKS.filter(s => s.type === 'crypto')
+    : [...ARENA_STOCKS];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -44,12 +62,17 @@ export function getTodayArenaStocks() {
   return pool.slice(0, 5);
 }
 
-// Predetermined result for each stock on a given day
-// (same answer for all players — if you pick right, you win)
+// Legacy fallback — only used when a pick has no recorded entry price
+// (e.g. picks saved before the real-price update).
 export function getStockResult(symbol) {
   const seed = hashStr(symbol + todayKey());
   const rand = seededRand(seed);
-  return rand() > 0.42 ? 'up' : 'down'; // 58% chance up, realistic skew
+  return rand() > 0.42 ? 'up' : 'down';
+}
+
+export function getLivePrice(symbol) {
+  const stock = ARENA_STOCKS.find(s => s.symbol === symbol);
+  return stock ? marketSim.prices[stock.assetId]?.price ?? null : null;
 }
 
 export function getTodayPicks() {
@@ -63,11 +86,19 @@ export function getTodayPicks() {
 }
 
 export function savePicks(picks) {
-  // picks: [{ symbol, direction: 'up'|'down' }]
+  // Snapshot real entry prices at lock-in — results compare against these.
+  const entryPrices = {};
+  picks.forEach(p => { entryPrices[p.symbol] = getLivePrice(p.symbol); });
+
+  // Briefing bonus is earned by reading BEFORE locking in
+  const briefingBonus = localStorage.getItem('wealthquest_briefing_read') === todayKey();
+
   localStorage.setItem(KEY_PICKS, JSON.stringify({
     date: todayKey(),
     submittedAt: Date.now(),
     picks,
+    entryPrices,
+    briefingBonus,
     resolved: false,
   }));
 }
@@ -83,17 +114,33 @@ export function resolvePicksNow() {
   if (!data || data.resolved) return null;
 
   const results = data.picks.map(pick => {
-    const trueResult = getStockResult(pick.symbol);
-    const won = pick.direction === trueResult;
-    return { ...pick, trueResult, won };
+    const entry = data.entryPrices?.[pick.symbol];
+    const now   = getLivePrice(pick.symbol);
+    let trueResult, movePct = null;
+    if (entry != null && now != null && entry > 0) {
+      movePct = ((now - entry) / entry) * 100;
+      // Flat price counts as a push — the player keeps their call
+      trueResult = now > entry ? 'up' : now < entry ? 'down' : pick.direction;
+    } else {
+      trueResult = getStockResult(pick.symbol); // legacy fallback
+    }
+    return { ...pick, trueResult, won: pick.direction === trueResult, movePct };
   });
 
   const wins = results.filter(r => r.won).length;
   const losses = results.length - wins;
   const portfolioChange = wins * 500 - losses * 200;
-  const xpGain = wins * 30 + (wins === 5 ? 100 : 0); // bonus for perfect
 
-  const resolved = { date: data.date, results, wins, losses, portfolioChange, xpGain, claimed: false };
+  const baseXp = wins * 30 + (wins === 5 ? 100 : 0);
+  const bonusXp = data.briefingBonus ? Math.round(baseXp * (BRIEFING_XP_MULT - 1)) : 0;
+  const xpGain = baseXp + bonusXp;
+
+  const resolved = {
+    date: data.date, results, wins, losses,
+    portfolioChange, xpGain, bonusXp,
+    briefingBonus: !!data.briefingBonus,
+    claimed: false,
+  };
   localStorage.setItem(KEY_RESULTS, JSON.stringify(resolved));
   localStorage.setItem(KEY_PICKS, JSON.stringify({ ...data, resolved: true }));
   return resolved;

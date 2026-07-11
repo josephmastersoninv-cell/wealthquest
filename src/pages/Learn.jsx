@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Star, Zap, Flame, Heart, ChevronRight, BookOpen, Swords, Eye, TrendingUp, TrendingDown } from 'lucide-react';
-import { LESSON_COLORS, isLessonUnlocked, getLessonStars, TOTAL_LESSONS, UNITS } from '@/lib/unitData';
+import { LESSON_COLORS, isLessonUnlocked, getLessonStars, TOTAL_LESSONS, UNITS, CHAPTER_EXAMS } from '@/lib/unitData';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { getXpProgress } from '@/lib/levelData';
 import { getTodayKey } from '@/lib/dailyChallengeData';
@@ -140,6 +140,18 @@ export default function Learn() {
   const multiplierLabel = getMultiplierLabel(streak);
   const bossWins = getBossWins();
 
+  // Chapter context for progress display
+  const currentChapter = (() => {
+    for (let ch = 1; ch <= 10; ch++) {
+      const chUnits = UNITS.filter(u => u.chapter === ch);
+      const chLessons = chUnits.flatMap(u => u.lessons);
+      const chDone = chLessons.filter(l => completedLessons.includes(l.id)).length;
+      if (chDone < chLessons.length) return { num: ch, done: chDone, total: chLessons.length };
+    }
+    return { num: 10, done: 40, total: 40 };
+  })();
+  const EXAM_UNLOCK_THRESHOLD = 40; // Chapter 1 complete
+
   return (
     <div className="min-h-screen bg-background pb-28" onClick={(e) => { if (!e.target.closest('button, a')) setActiveTip(null); }}>
 
@@ -176,7 +188,12 @@ export default function Learn() {
         {/* Slim progress strip */}
         <div className="px-4 pt-3 pb-1">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-bold text-muted-foreground">{completedCount} / {TOTAL_LESSONS} lessons</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-muted-foreground">
+                Ch.{currentChapter.num} · {currentChapter.done}/{currentChapter.total} lessons
+              </span>
+              <span className="text-[10px] text-muted-foreground/50 font-bold">({completedCount} total)</span>
+            </div>
             <div className="flex items-center gap-2">
               {multiplierLabel && <span className="text-[10px] font-extrabold text-amber-500">{multiplierLabel} 🔥</span>}
               <span className="text-xs font-bold text-primary">{Math.round(completedCount / TOTAL_LESSONS * 100)}%</span>
@@ -195,7 +212,7 @@ export default function Learn() {
           </motion.div>
         )}
 
-        {/* ── Units ─────────────────────────────────────────────── */}
+        {/* ── Units + Chapter Exam Gates ─────────────────────────── */}
         {UNITS.map((unit, unitIdx) => {
           const unitColors = LESSON_COLORS[unit.color];
           const unitCompleted = unit.lessons.filter(l => completedLessons.includes(l.id)).length;
@@ -209,7 +226,7 @@ export default function Learn() {
           // ── LOCKED UNIT — mysterious teaser ──────────────────────
           if (!unitUnlocked) {
             const realCount = learnerCounts[unit.lessons[0].id] ?? 0;
-            const teaserTerms = unit.lessons.flatMap(l => l.terms).slice(0, 4);
+            const teaserTerms = unit.lessons.flatMap(l => l.termIds ?? l.terms ?? []).slice(0, 4);
             return (
               <div key={unit.id} className="mx-4 mt-5 mb-2">
                 <div className="relative rounded-2xl overflow-hidden border border-border bg-card">
@@ -217,7 +234,7 @@ export default function Learn() {
                   {/* Coloured top strip — same style as unlocked banners but dimmed */}
                   <div className={`${unitColors.bg} opacity-30 px-4 py-3 flex items-center justify-between`}>
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl grayscale opacity-60">{unit.emoji}</span>
+                      <span className="text-2xl grayscale opacity-60">{unit.icon ?? unit.emoji}</span>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wider text-white/70">Section {unitIdx + 1}</p>
                         <h2 className="text-base font-extrabold text-white leading-tight">{unit.title}</h2>
@@ -231,7 +248,7 @@ export default function Learn() {
                     {unit.lessons.map((_, i) => (
                       <div key={i} className="flex flex-col items-center gap-2 opacity-30 blur-[2px]">
                         <div className={`w-12 h-12 rounded-full ${unitColors.bg} opacity-40 flex items-center justify-center text-xl`}>
-                          {unit.emoji}
+                          {unit.icon ?? unit.emoji}
                         </div>
                         <div className="w-8 h-1 rounded-full bg-muted-foreground/30" />
                       </div>
@@ -272,13 +289,13 @@ export default function Learn() {
               <div className="mx-4 mt-5 rounded-2xl overflow-hidden">
                 <div className={`${unitColors.bg} px-4 py-4 flex items-center justify-between`}>
                   <div className="flex items-center gap-3">
-                    <span className="text-3xl">{unit.emoji}</span>
+                    <span className="text-3xl">{unit.icon ?? unit.emoji}</span>
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wider text-white/70">
                         Section {unitIdx + 1}
                       </p>
                       <h2 className="text-base font-extrabold text-white leading-tight">{unit.title}</h2>
-                      <p className="text-xs text-white/80 mt-0.5">{unit.subtitle}</p>
+                      <p className="text-xs text-white/80 mt-0.5">{unit.subtitle ?? unit.description}</p>
                     </div>
                   </div>
                   <div className="text-right shrink-0 flex flex-col items-end gap-1">
@@ -346,7 +363,75 @@ export default function Learn() {
               </div>
             </div>
           );
-        })}
+        }).reduce((acc, node, idx) => {
+          // Insert chapter header banner before the first unit of chapters 2–10
+          if (idx > 0 && idx % 10 === 0) {
+            const chapterNum = Math.ceil((idx + 1) / 10);
+            const chExam = CHAPTER_EXAMS.find(e => e.chapter === chapterNum);
+            const CHAPTER_NAMES = ['', 'Financial Foundations', 'Stock Market Mastery', 'Banking & Credit', 'Investing Essentials', 'Real Estate & Loans', 'Taxes & Government', 'Business Finance', 'Retirement & Wealth', 'Risk & Insurance', 'Advanced Markets'];
+            acc.push(
+              <div key={`ch-header-${chapterNum}`} className="mx-4 mt-6 mb-2">
+                <div className={`rounded-2xl bg-gradient-to-r ${chExam?.color ?? 'from-gray-700 to-gray-900'} p-px`}>
+                  <div className="rounded-2xl bg-black/60 px-4 py-3 flex items-center gap-3">
+                    <span className="text-2xl">{chExam?.icon ?? '📚'}</span>
+                    <div>
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-white/50">Chapter {chapterNum}</p>
+                      <p className="font-black text-white text-sm leading-tight">{CHAPTER_NAMES[chapterNum]}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          acc.push(node);
+          // Insert chapter exam gate after units 10, 20, 30 … 100 (1-indexed)
+          const unitId = idx + 1;
+          if (unitId % 10 === 0) {
+            const exam = CHAPTER_EXAMS.find(e => e.afterUnit === unitId);
+            if (exam) {
+              const chapterDone = UNITS.slice(0, unitId).every(u =>
+                u.lessons.every(l => completedLessons.includes(l.id))
+              );
+              const bestKey = `chapter_exam_${exam.id}`;
+              const bestScore = progress?.[bestKey] ?? 0;
+              acc.push(
+                <Link key={exam.id} to={`/chapter-exam/${exam.id}`}>
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`mx-4 mt-4 mb-2 rounded-3xl overflow-hidden bg-gradient-to-br ${exam.color} p-px shadow-2xl`}
+                  >
+                    <div className="rounded-3xl bg-black/30 backdrop-blur p-5 flex items-center gap-4">
+                      <motion.div
+                        animate={chapterDone ? { rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] } : {}}
+                        transition={{ repeat: Infinity, duration: 3 }}
+                        className="text-4xl shrink-0"
+                      >
+                        {bestScore >= 70 ? '✅' : chapterDone ? exam.icon : '🔒'}
+                      </motion.div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white/60 text-[10px] font-extrabold uppercase tracking-widest">⚡ Chapter {exam.chapter} Boss</p>
+                        <p className="text-white font-black text-base leading-tight">{exam.title}</p>
+                        <p className="text-white/60 text-xs mt-0.5">
+                          {bestScore >= 70 ? `Best: ${bestScore}% · ` : ''}{exam.xpReward.toLocaleString()} XP · {exam.coinsReward.toLocaleString()} Coins
+                        </p>
+                      </div>
+                      <div className="shrink-0">
+                        {bestScore >= 70
+                          ? <div className="bg-green-400/30 rounded-xl px-2.5 py-1 text-green-300 font-extrabold text-xs">✓ Passed</div>
+                          : <div className={`rounded-xl px-2.5 py-1 font-extrabold text-xs ${chapterDone ? 'bg-white/20 text-white' : 'bg-white/10 text-white/40'}`}>
+                              {chapterDone ? 'Fight →' : 'Locked'}
+                            </div>
+                        }
+                      </div>
+                    </div>
+                  </motion.div>
+                </Link>
+              );
+            }
+          }
+          return acc;
+        }, [])}
 
         {/* ── Bottom widgets (after lessons) ── */}
         <div className="px-4 mt-6 space-y-3">

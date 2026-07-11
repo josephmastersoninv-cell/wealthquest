@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Check, Zap, Heart, BookOpen, Globe, Trophy, Lock } from 'lucide-react';
+import { ArrowLeft, Check, Zap, Heart, BookOpen, Globe, Trophy, Lock, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/lib/authContext';
 
 const FEATURES = [
   { icon: Heart,    label: 'Unlimited Hearts',         sub: 'Never get locked out of lessons', pro: true,  free: false },
   { icon: Zap,      label: 'Double XP on all lessons', sub: 'Level up 2× faster permanently',  pro: true,  free: false },
   { icon: Trophy,   label: 'Exclusive leagues',         sub: 'Compete in Pro-only leagues',     pro: true,  free: false },
-  { icon: BookOpen, label: 'All 200+ terms unlocked',  sub: 'Full glossary access',            pro: true,  free: false },
+  { icon: BookOpen, label: 'All 205+ terms unlocked',  sub: 'Full glossary, all 20 units',     pro: true,  free: false },
   { icon: Globe,    label: 'Offline mode',              sub: 'Learn without internet',          pro: true,  free: false },
-  { icon: Zap,      label: 'Basic lessons',             sub: '26 lessons, 131 terms',           pro: true,  free: true  },
+  { icon: Zap,      label: 'Basic lessons',             sub: '50+ lessons across 20 units',     pro: true,  free: true  },
   { icon: Trophy,   label: 'League rankings',           sub: 'Bronze to Gold leagues',          pro: true,  free: true  },
   { icon: BookOpen, label: 'Flashcards & review',       sub: 'Spaced repetition system',        pro: true,  free: true  },
 ];
@@ -21,6 +22,31 @@ const PLANS = [
 
 export default function Pro() {
   const [selected, setSelected] = useState('annual');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const { user } = useAuth();
+
+  async function handleSubscribe() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: selected, email: user?.email }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError(data.error || 'Something went wrong. Try again.');
+        setLoading(false);
+      }
+    } catch {
+      setError('Network error. Please try again.');
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background pb-16 max-w-lg mx-auto">
@@ -76,9 +102,12 @@ export default function Pro() {
         {/* CTA */}
         <motion.button
           whileTap={{ scale: 0.97 }}
-          className="w-full h-16 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-extrabold text-lg shadow-xl mb-2">
-          Start 7-Day Free Trial 🚀
+          onClick={handleSubscribe}
+          disabled={loading}
+          className="w-full h-16 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-extrabold text-lg shadow-xl mb-2 flex items-center justify-center gap-2 disabled:opacity-70">
+          {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Processing…</> : 'Start 7-Day Free Trial 🚀'}
         </motion.button>
+        {error && <p className="text-center text-xs text-rose-500 mb-2">{error}</p>}
         <p className="text-center text-xs text-muted-foreground mb-6">Cancel anytime · No commitment · Secure payment</p>
 
         {/* Feature comparison */}

@@ -5,16 +5,12 @@ import { COUNTRIES, setMyCountry } from '@/lib/countryData';
 import { useAuth } from '@/lib/authContext';
 import { checkUsernameAvailable } from '@/lib/playerSync';
 import { isConfigured } from '@/lib/supabase';
+import { DAILY_GOALS, setDailyGoal } from '@/lib/dailyGoal';
 
-const GOAL_KEY = 'wealthquest_daily_goal';
 const IS_LOCAL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const AVATARS  = ['🦁', '🐯', '🦊', '🐺', '🦅', '🐬', '🦋', '🐉', '🦄', '🤖', '👑', '⚡'];
-const GOALS    = [
-  { id: 10,  label: 'Casual',  sub: '10 XP / day',  emoji: '🌱' },
-  { id: 20,  label: 'Regular', sub: '20 XP / day',  emoji: '🔥' },
-  { id: 50,  label: 'Serious', sub: '50 XP / day',  emoji: '⚡' },
-  { id: 100, label: 'Intense', sub: '100 XP / day', emoji: '💎' },
-];
+// Canonical goals from dailyGoal.js — keyed by string id so selection actually persists.
+const GOALS = DAILY_GOALS.map(g => ({ id: g.id, label: g.label, sub: `${g.xp} XP / day · ${g.desc}`, emoji: g.emoji }));
 
 function validateEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
@@ -41,7 +37,7 @@ export default function OnboardingModal() {
   const [showPw,   setShowPw]   = useState(false);
   const [country,  setCountry]  = useState(null);
   const [search,   setSearch]   = useState('');
-  const [goal,     setGoal]     = useState(20);
+  const [goal,     setGoal]     = useState('regular');
   const [nameStatus, setNameStatus] = useState('idle');
   const nameTimer = useRef(null);
 
@@ -129,6 +125,7 @@ export default function OnboardingModal() {
     if (password.length < 6)   { setErr('Password must be at least 6 characters.'); return 'error'; }
     if (nameStatus === 'taken') { setErr('Username is already taken.'); return 'error'; }
     if (!country)              { setErr('Please pick a country first.'); return 'error'; }
+    setDailyGoal(goal); // persist goal now so it survives email-confirmation flow
     setBusy(true); setErr('');
     try {
       const result = await signUp({
@@ -148,7 +145,7 @@ export default function OnboardingModal() {
       }
 
       // Session created immediately — save extra profile fields now
-      localStorage.setItem(GOAL_KEY, String(goal));
+      setDailyGoal(goal);
       setMyCountry(country);
       // upsertPlayer uses the newly-signed-in user from authContext
       await upsertPlayer({
