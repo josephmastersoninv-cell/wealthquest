@@ -45,10 +45,10 @@ export default function BossBattle() {
   const navigate = useNavigate();
   const { progress, updateProgress } = useUserProgress();
 
-  const unit = UNITS.find(u => u.id === unitId);
+  const unit = UNITS.find(u => String(u.id) === String(unitId));
   const terms = useMemo(() => {
     if (!unit) return [];
-    const allTermIds = unit.lessons.flatMap(l => l.terms);
+    const allTermIds = unit.lessons.flatMap(l => l.termIds ?? l.terms ?? []);
     const termObjs = allTermIds.map(id => getTermById(id)).filter(Boolean);
     return shuffle(termObjs).slice(0, QUESTIONS);
   }, [unit]);

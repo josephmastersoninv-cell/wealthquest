@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Zap, Star, Trophy, Flame, ArrowRight, XCircle, CheckCircle, ChevronRight } from 'lucide-react';
-import { CHAPTER_EXAMS } from '@/lib/unitData';
+import { CHAPTER_EXAMS, UNITS } from '@/lib/unitData';
 import { getTermById } from '@/lib/glossaryData';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { sounds } from '@/lib/sound';
@@ -249,6 +249,26 @@ export default function ChapterExam() {
           <p className="text-2xl mb-4">🔒</p>
           <p className="font-bold text-foreground">Exam not found</p>
           <button onClick={() => navigate('/')} className="mt-4 text-primary font-bold">Back</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Gate: all units up to this chapter must be complete — no deep-link XP farming
+  const completedLessons = progress?.completed_lessons ?? [];
+  const chapterDone = UNITS.slice(0, exam.afterUnit).every(u =>
+    u.lessons.every(l => completedLessons.includes(l.id))
+  );
+  if (!chapterDone) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-6">
+        <div className="text-center">
+          <p className="text-5xl mb-4">🔒</p>
+          <p className="font-extrabold text-foreground text-lg">Boss locked</p>
+          <p className="text-sm text-muted-foreground mt-2">Complete all units in Chapter {exam.chapter} to challenge this boss.</p>
+          <button onClick={() => navigate('/')} className="mt-5 bg-primary text-primary-foreground font-extrabold px-6 py-3 rounded-2xl active:scale-95">
+            Back to Learn
+          </button>
         </div>
       </div>
     );

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, CheckCircle2, XCircle, ChevronRight, Star, Zap, DollarSign, Heart, Crown } from 'lucide-react';
-import { getLessonById, LESSON_COLORS, scoreToStars, LESSON_XP, LESSON_COINS } from '@/lib/lessonData';
+import { getLessonById, LESSON_COLORS, scoreToStars, LESSON_XP, LESSON_COINS, isLessonUnlocked } from '@/lib/lessonData';
 import { getTermById, GLOSSARY_TERMS } from '@/lib/glossaryData';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { useIsPro } from '@/lib/useIsPro';
@@ -338,6 +338,18 @@ export default function Lesson() {
   const [finalStreak, setFinalStreak] = useState(null);
 
   if (!lesson) return <div className="p-8 text-center text-muted-foreground">Lesson not found.</div>;
+
+  // Gate: deep links to locked lessons don't grant XP — back to the path
+  if (!isLessonUnlocked(lesson.id, progress?.completed_lessons ?? [])) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 text-center gap-4">
+        <span className="text-5xl">🔒</span>
+        <p className="font-extrabold text-foreground text-lg">Lesson locked</p>
+        <p className="text-sm text-muted-foreground">Complete the previous lessons to unlock this one.</p>
+        <Link to="/" className="bg-primary text-primary-foreground font-extrabold px-6 py-3 rounded-2xl active:scale-95">Back to Learn</Link>
+      </div>
+    );
+  }
 
   const hearts = progress?.hearts ?? 5;
   if (!isPro && hearts === 0 && phase !== 'results') return <NoHeartsScreen />;
