@@ -29,7 +29,8 @@
       "Bash(grep -n \"AnimatePresence\\\\|</motion\\\\|</div>\\\\s*$\" /Users/josephmasterson/Downloads/wealthquest/src/pages/League.jsx)",
       "Skill(run)",
       "Skill(run:*)",
-      "Bash(echo \"---exit $?---\")"
+      "Bash(echo \"---exit $?---\")",
+      "Bash(python3 -)"
     ]
   }
 }

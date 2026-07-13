@@ -129,15 +129,14 @@ export function resolvePicksNow() {
 
   const wins = results.filter(r => r.won).length;
   const losses = results.length - wins;
-  const portfolioChange = wins * 500 - losses * 200;
-
-  const baseXp = wins * 30 + (wins === 5 ? 100 : 0);
-  const bonusXp = data.briefingBonus ? Math.round(baseXp * (BRIEFING_XP_MULT - 1)) : 0;
-  const xpGain = baseXp + bonusXp;
+  const baseChange = wins * 500 - losses * 200 + (wins === 5 ? 500 : 0);
+  // Informed Investor bonus: reading the briefing boosts positive winnings by 50%
+  const bonusCash = data.briefingBonus && baseChange > 0 ? Math.round(baseChange * 0.5) : 0;
+  const portfolioChange = baseChange + bonusCash;
 
   const resolved = {
     date: data.date, results, wins, losses,
-    portfolioChange, xpGain, bonusXp,
+    portfolioChange, bonusCash,
     briefingBonus: !!data.briefingBonus,
     claimed: false,
   };

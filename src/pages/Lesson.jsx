@@ -15,6 +15,7 @@ import { markWrong } from '@/lib/reviewData';
 import { sounds } from '@/lib/sound';
 import { haptics } from '@/lib/haptics';
 import { syncChestsFromLessons, getPendingChests } from '@/lib/chestData';
+import { adjustCash } from '@/lib/tradeActions';
 import ChestModal from '@/components/ChestModal';
 import StreakMilestone from '@/components/StreakMilestone';
 
@@ -247,7 +248,7 @@ function QuizPhase({ terms, allTerms, colors, onDone, onWrongAnswer, onStreakHea
 }
 
 // ---------- Results phase ----------
-function ResultsPhase({ lesson, score, total, stars, earned, colors, isRetry, onRetry }) {
+function ResultsPhase({ lesson, score, total, stars, earned, colors, isRetry, onRetry, onInvest }) {
   return (
     <div className="px-4 pb-8 flex flex-col items-center text-center">
       <motion.div initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
@@ -265,19 +266,18 @@ function ResultsPhase({ lesson, score, total, stars, earned, colors, isRetry, on
 
       {stars >= 1 && earned && (
         <div className="bg-card border border-border rounded-2xl p-4 w-full mb-5">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Rewards</p>
-          <div className="flex gap-3">
-            <div className="flex-1 bg-primary/10 rounded-xl p-3 text-center">
-              <Zap className="w-5 h-5 text-primary mx-auto mb-1" />
-              <p className="text-lg font-extrabold text-primary">+{earned.xp}</p>
-              <p className="text-xs text-muted-foreground">XP</p>
-            </div>
-            <div className="flex-1 bg-emerald-50 rounded-xl p-3 text-center">
-              <DollarSign className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
-              <p className="text-lg font-extrabold text-emerald-600">+${earned.coins}</p>
-              <p className="text-xs text-muted-foreground">Cash</p>
-            </div>
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">You earned</p>
+          <div className="bg-emerald-500/10 rounded-xl p-4 text-center mb-3">
+            <DollarSign className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+            <p className="text-2xl font-black text-emerald-500">+${earned.coins}</p>
+            <p className="text-xs text-muted-foreground">cash</p>
           </div>
+          {onInvest && (
+            <button onClick={onInvest}
+              className="w-full h-12 rounded-xl bg-foreground text-background font-extrabold text-sm active:scale-95 transition-all">
+              📈 Invest your ${earned.coins} — trade the news →
+            </button>
+          )}
         </div>
       )}
 
@@ -398,7 +398,7 @@ export default function Lesson() {
       if (shouldReward) {
         updates.xp = (progress.xp ?? 0) + LESSON_XP;
         updates.coins = (progress.coins ?? 0) + LESSON_COINS;
-        toast.success(`+${LESSON_XP} XP · +$${LESSON_COINS} earned!`);
+        toast.success(`+$${LESSON_COINS} earned!`);
       }
       await updateProgress(updates);
 
@@ -508,6 +508,13 @@ export default function Lesson() {
                 earned={earned}
                 colors={colors}
                 onRetry={() => { setPhase('study'); setScore(0); setConfetti(false); }}
+                onInvest={earned ? () => {
+                  // Move lesson earnings from wallet into portfolio cash, then trade the news
+                  adjustCash(earned.coins);
+                  updateProgress({ coins: Math.max(0, (progress?.coins ?? 0) - earned.coins) });
+                  toast.success(`$${earned.coins} moved to your portfolio cash`);
+                  navigate('/news?from=lesson');
+                } : undefined}
               />
             </motion.div>
           )}

@@ -3,10 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, TrendingUp, TrendingDown, Clock, Crown, Globe, X, CheckCircle2, XCircle, ChevronDown } from 'lucide-react';
 import { useUserProgress } from '@/lib/useUserProgress';
 import { COUNTRIES, getMyCountry, setMyCountry, getCountryByCode } from '@/lib/countryData';
-import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, getPassiveXpToday, claimPassiveXp, SQUAD_MAX, RECRUIT_TIERS, getWeekSeed } from '@/lib/squadData';
+import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, SQUAD_MAX, RECRUIT_TIERS, getWeekSeed } from '@/lib/squadData';
+import { getDailyAdvice } from '@/lib/advisorData';
 import { fetchXpLeaderboard, fetchCountryTotals, fetchPlayersByCountry, subscribeToLeaderboard, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { useAuth } from '@/lib/authContext';
-import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getTimeUntilReveal, getLivePrice, isWeekendArena, BRIEFING_XP_MULT } from '@/lib/arenaData';
+import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getTimeUntilReveal, getLivePrice, isWeekendArena } from '@/lib/arenaData';
+import { adjustCash } from '@/lib/tradeActions';
 import marketSim from '@/lib/marketSim';
 import { useNavigate } from 'react-router-dom';
 import { checkWeeklyReward, claimWeeklyReward, MIN_COMPETITIVE } from '@/lib/leagueRewards';
@@ -109,7 +111,7 @@ function RecruitCard({ player, inSquad, squadFull, onRecruit, onDismiss, coins }
             </span>
           </div>
           <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
-            <span>+{player.xpDay} XP/day</span>
+            <span>📨 Daily advice</span>
             <span>Win rate {player.winRate}%</span>
           </div>
         </div>
@@ -162,7 +164,6 @@ export default function League() {
   const [myCountry, setMyCountryState] = useState(getMyCountry);
   const [showPicker, setShowPicker]   = useState(false);
   const [squad, setSquad]     = useState(getSquad);
-  const [passiveXp, setPassiveXp] = useState(getPassiveXpToday);
 
   // Arena state
   const [arenaStocks]       = useState(getTodayArenaStocks);
@@ -325,7 +326,7 @@ export default function League() {
     if (recruitPlayer(player)) {
       updateProgress({ coins: myCoins - player.cost });
       setSquad(getSquad());
-      toast.success(`${player.avatar} ${player.name} recruited! +${player.xpDay} XP/day`);
+      toast.success(`${player.avatar} ${player.name} recruited! They'll send daily advice`);
     } else {
       toast.error(squad.length >= SQUAD_MAX ? 'Squad is full!' : 'Already recruited');
     }
@@ -335,14 +336,6 @@ export default function League() {
     dismissPlayer(id);
     setSquad(getSquad());
     toast('Player released from squad');
-  }
-
-  function handleClaimPassive() {
-    if (passiveXp <= 0) { toast('Already claimed today'); return; }
-    const xp = claimPassiveXp();
-    updateProgress({ xp: myXp + xp });
-    setPassiveXp(0);
-    toast.success(`+${xp} XP from your squad!`);
   }
 
   function handleSelectCountry(code) {
@@ -370,14 +363,11 @@ export default function League() {
   function handleClaimArena() {
     const r = claimResults();
     if (!r) return;
-    const newBalance = (progress?.portfolio_balance ?? 10000) + r.portfolioChange;
-    updateProgress({
-      xp: (progress?.xp ?? 0) + r.xpGain,
-      portfolio_balance: Math.max(0, newBalance),
-    });
+    // Winnings land as real cash in your actual portfolio — no XP
+    adjustCash(r.portfolioChange);
     setResults({ ...r, claimed: true });
     const emoji = r.wins === 5 ? '🏆' : r.wins >= 3 ? '🎉' : '💸';
-    toast.success(`${emoji} ${r.wins}/5 correct! ${r.portfolioChange >= 0 ? '+' : ''}$${r.portfolioChange} to portfolio`);
+    toast.success(`${emoji} ${r.wins}/5 correct! ${r.portfolioChange >= 0 ? '+' : ''}$${r.portfolioChange} cash${r.bonusCash > 0 ? ` (incl. 📰 +$${r.bonusCash} informed bonus)` : ''}`);
   }
 
   const allPicked = arenaStocks.every(s => selections[s.symbol]);
@@ -525,7 +515,7 @@ export default function League() {
                 <div className="flex-1 text-left">
                   <p className="font-extrabold text-white text-sm">Read Today's Briefing First</p>
                   <p className="text-xs text-white/60 mt-0.5">Live news & market reports — then make informed picks</p>
-                  <p className="text-[11px] font-extrabold text-amber-300 mt-1">📰 Informed Investor bonus: +50% XP on today's wins</p>
+                  <p className="text-[11px] font-extrabold text-amber-300 mt-1">📰 Informed Investor bonus: +50% cash on today's winnings</p>
                 </div>
                 <ChevronDown className="w-4 h-4 text-white/40 -rotate-90 shrink-0" />
               </motion.button>
@@ -540,8 +530,8 @@ export default function League() {
                     {results.wins === 5 ? '🏆 Perfect score!' : results.wins >= 3 ? `🎉 ${results.wins}/5 correct` : `💸 ${results.wins}/5 correct`}
                   </p>
                   <p className={`text-sm font-bold mt-0.5 ${results.portfolioChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {results.portfolioChange >= 0 ? '+' : ''}${results.portfolioChange} to portfolio · +{results.xpGain} XP
-                    {results.bonusXp > 0 && <span className="text-amber-400"> (incl. 📰 +{results.bonusXp} informed bonus)</span>}
+                    {results.portfolioChange >= 0 ? '+' : ''}${results.portfolioChange} cash to your portfolio
+                    {results.bonusCash > 0 && <span className="text-amber-400"> (incl. 📰 +${results.bonusCash} informed bonus)</span>}
                   </p>
                 </div>
                 <div className="p-4 space-y-2">
@@ -634,7 +624,7 @@ export default function League() {
                     );
                   })}
                   {submitted.briefingBonus && (
-                    <p className="text-[11px] font-extrabold text-amber-400 pt-1">📰 Informed Investor bonus active — +50% XP on wins</p>
+                    <p className="text-[11px] font-extrabold text-amber-400 pt-1">📰 Informed Investor bonus active — +50% cash on winnings</p>
                   )}
                 </div>
               </div>
@@ -711,7 +701,7 @@ export default function League() {
                   </button>
                   <p className="text-center text-xs text-muted-foreground mt-2">
                     Correct picks earn $500 · Wrong picks cost $200
-                    {briefingReadToday && <span className="text-amber-400 font-bold"> · 📰 +50% XP bonus active</span>}
+                    {briefingReadToday && <span className="text-amber-400 font-bold"> · 📰 +50% cash bonus active</span>}
                   </p>
                 </div>
               </>
@@ -904,7 +894,7 @@ export default function League() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="font-extrabold text-foreground">My Squad</p>
-                  <p className="text-xs text-muted-foreground">{squad.length}/{SQUAD_MAX} slots · {totalSquadXp} activity score</p>
+                  <p className="text-xs text-muted-foreground">{squad.length}/{SQUAD_MAX} advisors</p>
                 </div>
                 <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl px-2.5 py-1">
                   <span className="text-sm">💰</span>
@@ -934,7 +924,7 @@ export default function League() {
                                 <div className="h-full rounded-full opacity-70"
                                   style={{ width: `${Math.min(100, barPct)}%`, background: member.tierIdx === 0 ? '#60a5fa' : member.tierIdx === 1 ? '#34d399' : member.tierIdx === 2 ? '#a78bfa' : '#fbbf24' }} />
                               </div>
-                              <span className={`text-[10px] font-extrabold ${tier.color}`}>+{member.xpDay} XP/day</span>
+                              <span className={`text-[10px] font-extrabold ${tier.color}`}>{member.winRate ?? 50}% accuracy</span>
                             </div>
                           </div>
                           <button onClick={() => handleDismiss(member.id)}
@@ -961,15 +951,28 @@ export default function League() {
                 </p>
               )}
 
-              {/* Claim passive XP */}
-              {passiveXp > 0 ? (
-                <button onClick={handleClaimPassive}
-                  className="w-full bg-gradient-to-r from-primary to-violet-600 text-white font-extrabold py-3 rounded-xl text-sm active:scale-[0.98] transition-all shadow-lg shadow-primary/20">
-                  🎁 Claim +{passiveXp} XP from your squad
-                </button>
-              ) : (
-                <div className="w-full bg-muted rounded-xl py-2.5 text-center text-xs text-muted-foreground font-bold">
-                  {totalSquadXp > 0 ? '✓ Squad XP claimed today — come back tomorrow' : 'Recruit players below to start earning'}
+              {/* Daily advisor messages — grounded in real news & market direction */}
+              {squad.length > 0 && (
+                <div className="border-t border-border pt-3">
+                  <p className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest mb-2">📨 Today's advice from your squad</p>
+                  <div className="space-y-2">
+                    {getDailyAdvice(squad).map(a => (
+                      <div key={a.memberId} className="flex items-start gap-2.5 bg-muted/50 rounded-xl p-3">
+                        <span className="text-xl shrink-0">{a.avatar}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-extrabold text-foreground">{a.name}</p>
+                            <span className="text-[9px] font-bold text-muted-foreground bg-muted rounded px-1 py-0.5">{a.winRate}% accuracy</span>
+                          </div>
+                          <p className="text-xs text-foreground/90 mt-0.5">"{a.text}"</p>
+                          <p className={`text-[10px] font-extrabold mt-1 ${a.call === 'up' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            Their call: {a.call === 'up' ? '📈 UP' : '📉 DOWN'} · trust it {a.winRate}% of the time
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-2">Higher win-rate investors read the news right more often. Use their calls in the Arena or trade the news directly.</p>
                 </div>
               )}
             </div>

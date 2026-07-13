@@ -145,13 +145,16 @@ export async function pullAndRestore(userId) {
         try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) ?? 'null'); } catch { return null; }
       })();
 
-      // Cloud wins if it has holdings (local might be on a fresh device)
+      // Restore from cloud ONLY on a fresh device (no meaningful local portfolio).
+      // Auth token refreshes re-fire this — clobbering an active local portfolio
+      // would revert recent trades and wipe local trade history.
       const localHoldings = Object.keys(existingPortfolio?.holdings ?? {}).length;
-      const cloudHoldings = Object.keys(player.portfolio_holdings).length;
-      if (cloudHoldings >= localHoldings) {
+      const localIsFresh = !existingPortfolio || (localHoldings === 0 && !(existingPortfolio.trades?.length));
+      if (localIsFresh) {
         localStorage.setItem(PORTFOLIO_KEY, JSON.stringify({
           cash:     player.portfolio_cash ?? 10000,
           holdings: player.portfolio_holdings,
+          trades:   existingPortfolio?.trades ?? [],
         }));
       }
     }
