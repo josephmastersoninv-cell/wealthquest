@@ -1,19 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, TrendingUp, TrendingDown, Minus, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { fetchNews } from '@/lib/newsClient';
 
 const TYPE_CONFIG = {
-  news:         { label: 'Market News',   badge: 'bg-blue-500/30 text-blue-200',    bg: 'from-blue-900 via-slate-900 to-black',    emoji: '📰' },
-  central_bank: { label: 'Central Bank',  badge: 'bg-amber-500/30 text-amber-200',  bg: 'from-amber-900 via-stone-900 to-black',   emoji: '🏦' },
-  rumour:       { label: 'Market Rumour', badge: 'bg-violet-500/30 text-violet-200', bg: 'from-violet-900 via-slate-900 to-black', emoji: '🤫' },
+  news:         { label: 'MARKET NEWS',   ink: '#1d4ed8', paper: '#f7f1e1', emoji: '📰', kicker: 'THE BUSINESS DESK' },
+  central_bank: { label: 'CENTRAL BANK',  ink: '#92400e', paper: '#f6eedd', emoji: '🏦', kicker: 'FROM THE FED WIRE' },
+  rumour:       { label: 'GOSSIP COLUMN', ink: '#6d28d9', paper: '#f3ecdf', emoji: '🤫', kicker: 'HEARD ON THE STREET' },
 };
 
-const SENTIMENT_ICON = {
-  positive: { icon: TrendingUp,   color: 'text-emerald-400', label: 'Bullish signal' },
-  negative: { icon: TrendingDown, color: 'text-rose-400',    label: 'Bearish signal' },
-  neutral:  { icon: Minus,        color: 'text-slate-400',   label: 'Neutral'        },
+const SENTIMENT = {
+  positive: { stamp: 'BULLISH', arrow: '▲', color: '#15803d' },
+  negative: { stamp: 'BEARISH', arrow: '▼', color: '#b91c1c' },
+  neutral:  { stamp: 'NEUTRAL', arrow: '■', color: '#525252' },
 };
 
 const STOCK_EMOJIS = {
@@ -34,62 +34,105 @@ function timeAgo(dateStr) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function NewsCard({ item, index, total, isActive, onNext, isLast, onFinish }) {
+const todayMasthead = () =>
+  new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+
+// One cartoon-tabloid front page per story
+function NewspaperPage({ item, index, total, isLast, onFinish }) {
   const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.news;
-  const sent = SENTIMENT_ICON[item.sentiment] ?? SENTIMENT_ICON.neutral;
-  const SentIcon = sent.icon;
+  const sent = SENTIMENT[item.sentiment] ?? SENTIMENT.neutral;
 
   return (
-    <div className="relative w-full h-full flex flex-col">
-      <div className={`absolute inset-0 bg-gradient-to-b ${cfg.bg}`} />
-
-      {/* Top meta */}
-      <div className="relative z-10 flex items-center justify-between px-5 pt-5 pb-2">
-        <span className={`text-xs font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-full ${cfg.badge}`}>
-          {cfg.emoji} {cfg.label}
-        </span>
-        <span className="text-xs font-bold text-white/40">{index + 1}/{total}</span>
+    <div
+      className="w-full h-full flex flex-col overflow-y-auto"
+      style={{
+        background: `radial-gradient(circle, rgba(0,0,0,0.045) 1px, transparent 1.5px) 0 0 / 7px 7px, ${cfg.paper}`,
+        color: '#1c1917',
+      }}
+    >
+      {/* Masthead */}
+      <div className="px-5 pt-14 pb-2 text-center border-b-4 border-double shrink-0" style={{ borderColor: '#1c1917' }}>
+        <p className="text-[9px] font-bold tracking-[0.3em]" style={{ color: '#78716c' }}>
+          {todayMasthead()} · DAILY MARKET EDITION · 5¢
+        </p>
+        <h1 className="font-serif font-black text-3xl tracking-tight leading-none mt-1" style={{ fontFamily: 'Georgia, serif' }}>
+          The Monelingo Times
+        </h1>
+        <p className="text-[9px] font-bold tracking-[0.25em] mt-1" style={{ color: '#78716c' }}>
+          "ALL THE MONEY NEWS FIT TO LEARN" · PAGE {index + 1} OF {total}
+        </p>
       </div>
 
-      {/* Main content */}
-      <div className="relative z-10 flex-1 flex flex-col justify-center px-6 py-4">
-        {/* Source + time */}
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs font-bold text-white/50">{item.source}</span>
-          {item.date && <span className="text-xs text-white/30">{timeAgo(item.date)}</span>}
-        </div>
+      {/* Kicker strip */}
+      <div className="flex items-center justify-between px-5 py-1.5 border-b-2 shrink-0" style={{ borderColor: '#1c1917' }}>
+        <span className="text-[10px] font-black tracking-[0.2em] px-2 py-0.5 border-2" style={{ borderColor: cfg.ink, color: cfg.ink }}>
+          {cfg.emoji} {cfg.label}
+        </span>
+        <span className="text-[10px] font-bold tracking-widest" style={{ color: '#78716c' }}>{cfg.kicker}</span>
+      </div>
+
+      {/* Story body */}
+      <div className="flex-1 px-5 py-4 relative">
+        {/* Rubber stamp */}
+        <motion.div
+          initial={{ scale: 3, opacity: 0, rotate: -25 }}
+          animate={{ scale: 1, opacity: 1, rotate: -12 }}
+          transition={{ type: 'spring', damping: 14, delay: 0.35 }}
+          className="absolute top-2 right-4 px-2.5 py-1 border-4 rounded font-black text-sm tracking-widest pointer-events-none select-none"
+          style={{ borderColor: sent.color, color: sent.color, opacity: 0.85, background: 'rgba(255,255,255,0.35)' }}
+        >
+          {sent.stamp} {sent.arrow}
+        </motion.div>
 
         {/* Headline */}
-        <h2 className="text-2xl font-black text-white leading-tight mb-4">
+        <motion.h2
+          initial={{ y: 14, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}
+          className="font-black leading-[1.05] text-[27px] pr-16 mt-1"
+          style={{ fontFamily: 'Georgia, serif' }}
+        >
           {item.title}
-        </h2>
+        </motion.h2>
 
-        {/* Description */}
+        {/* Byline */}
+        <p className="text-[10px] font-bold tracking-widest mt-2 uppercase" style={{ color: '#78716c' }}>
+          By {item.source ?? 'Wire Services'}{item.date ? ` · ${timeAgo(item.date)}` : ''}
+        </p>
+
+        {/* Emoji illustration */}
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2 }}
+          className="my-4 border-2 relative overflow-hidden"
+          style={{ borderColor: '#1c1917', background: 'radial-gradient(circle, rgba(0,0,0,0.09) 1.2px, transparent 1.6px) 0 0 / 6px 6px, #fff' }}
+        >
+          <div className="flex items-center justify-center gap-3 py-6 text-6xl">
+            <span>{cfg.emoji}</span>
+            <span>{item.sentiment === 'positive' ? '🚀' : item.sentiment === 'negative' ? '📉' : '🤷'}</span>
+            <span>{item.stocks?.length ? (STOCK_EMOJIS[item.stocks[0]] ?? '📊') : '💸'}</span>
+          </div>
+          <p className="text-[9px] font-bold text-center pb-1.5 tracking-widest uppercase" style={{ color: '#78716c' }}>
+            Artist's impression of today's market
+          </p>
+        </motion.div>
+
+        {/* Body copy */}
         {item.desc && (
-          <p className="text-sm text-white/70 leading-relaxed mb-5">
-            {item.desc}
+          <p className="text-[13px] leading-relaxed font-medium" style={{ fontFamily: 'Georgia, serif', color: '#292524' }}>
+            <span className="font-black text-2xl float-left mr-1.5 leading-none" style={{ fontFamily: 'Georgia, serif' }}>
+              {item.desc.charAt(0)}
+            </span>
+            {item.desc.slice(1)}
           </p>
         )}
 
-        {/* Sentiment */}
-        <div className={`flex items-center gap-2 mb-5 ${sent.color}`}>
-          <SentIcon className="w-4 h-4" />
-          <span className="text-xs font-extrabold uppercase tracking-wide">{sent.label}</span>
-        </div>
-
-        {/* Affected stocks */}
+        {/* Tickers — classifieds strip */}
         {item.stocks?.length > 0 && (
-          <div>
-            <p className="text-xs font-extrabold text-white/40 uppercase tracking-widest mb-2">Stocks affected</p>
-            <div className="flex flex-wrap gap-2">
+          <div className="mt-4 border-t-2 border-b-2 py-2" style={{ borderColor: '#1c1917' }}>
+            <p className="text-[9px] font-black tracking-[0.25em] mb-1.5" style={{ color: '#78716c' }}>■ TICKERS IN THIS STORY</p>
+            <div className="flex flex-wrap gap-1.5">
               {item.stocks.map(sym => (
-                <div key={sym} className="flex items-center gap-1.5 bg-white/10 border border-white/15 rounded-xl px-3 py-1.5">
-                  <span className="text-sm">{STOCK_EMOJIS[sym] ?? '📊'}</span>
-                  <span className="text-xs font-extrabold text-white">{sym}</span>
-                  {item.sentiment !== 'neutral' && (
-                    <SentIcon className={`w-3 h-3 ${sent.color}`} />
-                  )}
-                </div>
+                <span key={sym} className="text-[11px] font-black px-2 py-1 border" style={{ borderColor: '#1c1917' }}>
+                  {STOCK_EMOJIS[sym] ?? '📊'} {sym} <span style={{ color: sent.color }}>{sent.arrow}</span>
+                </span>
               ))}
             </div>
           </div>
@@ -97,29 +140,27 @@ function NewsCard({ item, index, total, isActive, onNext, isLast, onFinish }) {
 
         {/* Rumour disclaimer */}
         {item.type === 'rumour' && (
-          <div className="mt-4 bg-violet-500/10 border border-violet-500/20 rounded-xl px-3 py-2">
-            <p className="text-xs text-violet-300 font-bold">⚠️ Unverified rumour — use as context only. Do your own research.</p>
-          </div>
+          <p className="mt-3 text-[10px] font-bold italic" style={{ color: '#6d28d9' }}>
+            ⚠️ The Gossip Column prints what it hears — unverified! Do your own research, dear reader.
+          </p>
         )}
       </div>
 
-      {/* Bottom CTA */}
-      <div className="relative z-10 px-5 pb-8">
+      {/* Bottom */}
+      <div className="px-5 pb-8 pt-2 shrink-0">
         {isLast ? (
           <motion.button
             initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-            onClick={onFinish}
-            className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-extrabold text-base active:scale-95 transition-all shadow-lg shadow-primary/30"
+            onClick={e => { e.stopPropagation(); onFinish(); }}
+            className="w-full h-14 rounded-none border-4 font-black text-base tracking-widest active:scale-95 transition-all"
+            style={{ borderColor: '#1c1917', background: '#1c1917', color: cfg.paper }}
           >
-            Make Your Picks ⚡
+            EXTRA! EXTRA! MAKE YOUR PICKS ⚡
           </motion.button>
         ) : (
-          <div className="flex flex-col items-center gap-1">
-            <motion.div animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>
-              <ChevronDown className="w-6 h-6 text-white/30" />
-            </motion.div>
-            <p className="text-xs text-white/25 font-bold">Swipe up for next story</p>
-          </div>
+          <p className="text-center text-[10px] font-black tracking-[0.25em]" style={{ color: '#78716c' }}>
+            TAP RIGHT FOR NEXT PAGE ▸
+          </p>
         )}
       </div>
     </div>
@@ -133,10 +174,8 @@ export default function NewsBriefing() {
 
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); // all | news | central_bank | rumour
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [showFilters, setShowFilters] = useState(false);
-  const cardRefs = useRef([]);
+  const [idx, setIdx] = useState(0);
+  const [dir, setDir] = useState(1); // page-turn direction
 
   useEffect(() => {
     fetchNews().then(items => {
@@ -145,69 +184,34 @@ export default function NewsBriefing() {
     });
   }, []);
 
-  const filtered = filter === 'all' ? news : news.filter(n => n.type === filter);
-
-  // IntersectionObserver for active card
-  useEffect(() => {
-    const els = cardRefs.current.filter(Boolean);
-    if (!els.length) return;
-    const observer = new IntersectionObserver(
-      entries => entries.forEach(e => {
-        if (e.isIntersecting) setActiveIndex(parseInt(e.target.dataset.index, 10));
-      }),
-      { threshold: 0.6 }
-    );
-    els.forEach(el => observer.observe(el));
-    return () => observer.disconnect();
-  }, [filtered]);
-
-  const scrollTo = (i) => {
-    cardRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   function handleFinish() {
     localStorage.setItem('wealthquest_briefing_read', new Date().toISOString().slice(0, 10));
     if (fromArena) navigate('/league');
     else navigate(-1);
   }
 
-  const FILTERS = [
-    { id: 'all',          label: '📋 All' },
-    { id: 'news',         label: '📰 News' },
-    { id: 'central_bank', label: '🏦 Central Bank' },
-    { id: 'rumour',       label: '🤫 Rumours' },
-  ];
+  const next = () => { if (idx < news.length - 1) { setDir(1); setIdx(i => i + 1); } };
+  const prev = () => { if (idx > 0) { setDir(-1); setIdx(i => i - 1); } };
 
   return (
     <div className="fixed inset-0 bg-black flex flex-col overflow-hidden">
 
-      {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-4 pb-2 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-        <button
-          onClick={() => navigate(-1)}
-          className="pointer-events-auto flex items-center gap-1.5 text-white/80 font-bold text-sm bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back
-        </button>
-
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <button
-            onClick={() => setShowFilters(s => !s)}
-            className="bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-extrabold text-white"
-          >
-            {FILTERS.find(f => f.id === filter)?.label} ▾
-          </button>
-        </div>
+      {/* Story-style progress segments */}
+      <div className="absolute top-0 left-0 right-0 z-50 flex gap-1 px-3 pt-3">
+        {news.map((_, i) => (
+          <div key={i} className="flex-1 h-1 rounded-full overflow-hidden bg-white/25">
+            <div className="h-full bg-white transition-all duration-300" style={{ width: i < idx ? '100%' : i === idx ? '100%' : '0%', opacity: i === idx ? 1 : i < idx ? 0.7 : 0 }} />
+          </div>
+        ))}
       </div>
 
-      {/* Progress bar */}
-      <div className="absolute bottom-0 left-0 right-0 z-50 h-1 bg-white/10">
-        <motion.div
-          className="h-full bg-primary"
-          animate={{ width: filtered.length ? `${((activeIndex + 1) / filtered.length) * 100}%` : '0%' }}
-          transition={{ duration: 0.3 }}
-        />
-      </div>
+      {/* Back button */}
+      <button
+        onClick={() => navigate(-1)}
+        className="absolute top-6 left-3 z-50 flex items-center gap-1 text-white font-bold text-xs bg-black/50 backdrop-blur-sm px-2.5 py-1.5 rounded-full"
+      >
+        <ArrowLeft className="w-3.5 h-3.5" /> Back
+      </button>
 
       {/* Loading */}
       {loading && (
@@ -215,25 +219,19 @@ export default function NewsBriefing() {
           <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>
             <RefreshCw className="w-8 h-8 text-white/40" />
           </motion.div>
-          <p className="text-white/50 text-sm font-bold">Loading live market news…</p>
+          <p className="text-white/50 text-sm font-bold">Hot off the press…</p>
         </div>
       )}
 
       {/* Empty */}
-      {!loading && filtered.length === 0 && (
+      {!loading && news.length === 0 && (
         <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-4">
-          <p className="text-5xl">📡</p>
+          <p className="text-5xl">🗞️</p>
           <div>
-            <p className="text-white font-extrabold text-xl">
-              {filter === 'all' ? 'Market news unavailable' : 'No stories in this category'}
-            </p>
-            <p className="text-white/50 text-sm mt-2">
-              {filter === 'all'
-                ? 'Live feeds are temporarily down. Check back in a few minutes.'
-                : 'Try switching to All or a different category.'}
-            </p>
+            <p className="text-white font-extrabold text-xl">The presses are down</p>
+            <p className="text-white/50 text-sm mt-2">Live feeds are temporarily unavailable. Check back in a few minutes.</p>
           </div>
-          {fromArena && filter === 'all' && (
+          {fromArena && (
             <button onClick={handleFinish}
               className="mt-2 h-12 px-6 rounded-2xl bg-primary text-white font-extrabold text-sm active:scale-95 transition-all">
               Make Picks Without News →
@@ -242,72 +240,37 @@ export default function NewsBriefing() {
         </div>
       )}
 
-      {/* Cards */}
-      {!loading && filtered.length > 0 && (
-        <div
-          className="flex-1 overflow-y-scroll"
-          style={{ scrollSnapType: 'y mandatory', scrollbarWidth: 'none' }}
-        >
-          {filtered.map((item, i) => (
-            <div
-              key={i}
-              ref={el => { cardRefs.current[i] = el; }}
-              data-index={i}
-              className="w-full flex-shrink-0"
-              style={{ height: '100dvh', scrollSnapAlign: 'start' }}
+      {/* Newspaper pages with page-turn animation */}
+      {!loading && news.length > 0 && (
+        <div className="flex-1 relative max-w-lg mx-auto w-full">
+          <AnimatePresence mode="popLayout" custom={dir}>
+            <motion.div
+              key={idx}
+              custom={dir}
+              initial={{ x: dir > 0 ? '100%' : '-100%', rotate: dir > 0 ? 4 : -4, opacity: 0.6 }}
+              animate={{ x: 0, rotate: 0, opacity: 1 }}
+              exit={{ x: dir > 0 ? '-40%' : '40%', rotate: dir > 0 ? -3 : 3, opacity: 0 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 240 }}
+              className="absolute inset-0 shadow-2xl"
+              onClick={e => {
+                // Story-style tap navigation: left third = back, rest = forward.
+                // Real buttons inside the page call stopPropagation.
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (e.clientX - rect.left < rect.width * 0.3) prev();
+                else next();
+              }}
             >
-              <NewsCard
-                item={item}
-                index={i}
-                total={filtered.length}
-                isActive={i === activeIndex}
-                isLast={i === filtered.length - 1}
-                onNext={() => scrollTo(i + 1)}
+              <NewspaperPage
+                item={news[idx]}
+                index={idx}
+                total={news.length}
+                isLast={idx === news.length - 1}
                 onFinish={handleFinish}
               />
-            </div>
-          ))}
+            </motion.div>
+          </AnimatePresence>
         </div>
       )}
-
-      {/* Filter sheet */}
-      <AnimatePresence>
-        {showFilters && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setShowFilters(false)}
-              className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="absolute bottom-0 left-0 right-0 z-[70] bg-zinc-900 rounded-t-3xl p-5 pb-10"
-            >
-              <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-5" />
-              <p className="text-xs font-extrabold text-white/40 uppercase tracking-widest mb-4">Filter Stories</p>
-              <div className="space-y-2">
-                {FILTERS.map(f => (
-                  <button
-                    key={f.id}
-                    onClick={() => { setFilter(f.id); setActiveIndex(0); setShowFilters(false); setTimeout(() => scrollTo(0), 50); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all active:scale-95 ${
-                      filter === f.id ? 'bg-white text-black' : 'bg-white/10 text-white/80'
-                    }`}
-                  >
-                    {f.label}
-                    {f.id !== 'all' && (
-                      <span className="ml-auto text-xs opacity-60">
-                        {news.filter(n => n.type === f.id).length} stories
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
