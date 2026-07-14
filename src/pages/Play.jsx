@@ -14,7 +14,8 @@ import { toast } from 'sonner';
 export default function Play() {
   const { progress, updateProgress } = useUserProgress();
   const [showChest, setShowChest] = useState(false);
-  const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('play');
+  const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('play',
+    (progress?.completed_lessons?.length ?? 0) > 0 || (progress?.practice_sessions ?? 0) > 0);
 
   const dailyDone   = progress?.daily_challenge_date === getTodayKey();
   const hearts      = progress?.hearts ?? 5;

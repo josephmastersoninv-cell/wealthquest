@@ -45,16 +45,25 @@ const SECTION_INTROS = {
   },
 };
 
-export function useSectionIntro(section) {
+export function useSectionIntro(section, skipForExperienced = false) {
   const key = SECTION_INTROS[section]?.key;
   const [show, setShow] = useState(() => key ? !localStorage.getItem(key) : false);
+
+  // Experienced users (account already has progress) never see intros again,
+  // even on a fresh device — their cloud progress proves they know the ropes.
+  React.useEffect(() => {
+    if (skipForExperienced && show && key) {
+      localStorage.setItem(key, '1');
+      setShow(false);
+    }
+  }, [skipForExperienced, show, key]);
 
   function dismiss() {
     if (key) localStorage.setItem(key, '1');
     setShow(false);
   }
 
-  return { show, dismiss };
+  return { show: show && !skipForExperienced, dismiss };
 }
 
 export default function SectionIntro({ section, onDismiss }) {

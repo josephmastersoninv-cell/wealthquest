@@ -123,7 +123,7 @@ export default function Learn() {
     const firstLessonIds = UNITS.map(u => u.lessons[0].id);
     fetchUnitLearnerCounts(firstLessonIds).then(setLearnerCounts);
   }, []);
-  const { show: showIntroRaw, dismiss: dismissIntro } = useSectionIntro('learn');
+  const { show: showIntroRaw, dismiss: dismissIntro } = useSectionIntro('learn', (progress?.completed_lessons?.length ?? 0) > 0);
   // Show section intro only after login reward is dismissed
   const showIntro = showIntroRaw && !showLoginReward;
 

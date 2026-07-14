@@ -55,7 +55,8 @@ export default function BossBattle() {
 
   const questions = useMemo(() => terms.map(t => buildQuestion(t, GLOSSARY_TERMS)), [terms]);
 
-  const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('boss');
+  // Skip the intro once they've cleared 2+ units — they've met bosses before
+  const { show: showIntro, dismiss: dismissIntro } = useSectionIntro('boss', (progress?.completed_lessons?.length ?? 0) >= 8);
   const [phase, setPhase] = useState('intro'); // intro | battle | results
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState(null);
