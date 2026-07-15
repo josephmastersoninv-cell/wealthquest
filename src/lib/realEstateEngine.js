@@ -33,7 +33,7 @@ export async function fetchWorldOwnership() {
 
   const user = await authUser();
   if (user) {
-    const { data, error } = await supabase.from('properties').select('*');
+    const { data, error } = await supabase.from('properties').select('*, players:owner_id(country_code, avatar)');
     if (error) { window.__reTableMissing = true; return world; } // table not created yet → local mode
     window.__reTableMissing = false;
     (data ?? []).forEach(row => {
@@ -41,6 +41,8 @@ export async function fetchWorldOwnership() {
         assetId: row.asset_id,
         ownerId: row.owner_id,
         ownerName: row.owner_name,
+        ownerCountry: row.players?.country_code ?? null,
+        ownerAvatar: row.players?.avatar ?? null,
         mine: row.owner_id === user.id,
         purchasePrice: Number(row.purchase_price),
         purchasedAt: row.purchased_at,

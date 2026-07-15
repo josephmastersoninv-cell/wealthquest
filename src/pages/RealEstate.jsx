@@ -4,8 +4,92 @@ import { ArrowLeft, X } from 'lucide-react';
 import { CITIES, getCityById, getCityAssets, getAssetById, assetPrice, monthlyRent, cityTrend, currentGameMonth, MIN_DOWN_PCT, MORTGAGE_RATES, monthlyPayment } from '@/lib/realEstateData';
 import { fetchWorldOwnership, ownedCountsByCity, buyProperty, sellProperty, collectRent, pendingRent, settleMyProperties, myRealEstateEquity } from '@/lib/realEstateEngine';
 import { getPortfolio } from '@/lib/tradeActions';
+import { getCountryByCode } from '@/lib/countryData';
 import marketSim from '@/lib/marketSim';
 import { toast } from 'sonner';
+
+// ── Per-city visual identity for the SimCity map ────────────────────────────
+const CITY_THEMES = {
+  lagos:    { sky: ['#fbbf24', '#f97316'], ground: '#b45309', tile: '#d97706', edge: '#92400e', skyline: '🌴🏚️🏢🌴🛖🏢🌴', scenery: ['🌴', '🚌', '🌴'] },
+  jakarta:  { sky: ['#fde68a', '#34d399'], ground: '#047857', tile: '#059669', edge: '#065f46', skyline: '🌴🏙️🕌🏢🌴🏢', scenery: ['🌴', '🛵', '🌺'] },
+  mumbai:   { sky: ['#fed7aa', '#fb923c'], ground: '#9a3412', tile: '#c2410c', edge: '#7c2d12', skyline: '🕌🏢🏛️🏢🌴🏢', scenery: ['🛺', '🌴', '🐄'] },
+  mexico:   { sky: ['#fef3c7', '#f59e0b'], ground: '#b45309', tile: '#d97706', edge: '#78350f', skyline: '🏜️⛰️🏛️🏢🌵', scenery: ['🌵', '💀', '🌮'] },
+  saopaulo: { sky: ['#bbf7d0', '#22c55e'], ground: '#15803d', tile: '#16a34a', edge: '#14532d', skyline: '🏙️🌳🏢🏢🌳🏢', scenery: ['🌳', '⚽', '🦜'] },
+  warsaw:   { sky: ['#e2e8f0', '#94a3b8'], ground: '#475569', tile: '#64748b', edge: '#334155', skyline: '🏰🏢⛪🏢🌲', scenery: ['🌲', '🏰', '❄️'] },
+  seoul:    { sky: ['#c4b5fd', '#8b5cf6'], ground: '#5b21b6', tile: '#7c3aed', edge: '#4c1d95', skyline: '🌸🏯🏙️📡🏢', scenery: ['🌸', '🏮', '📱'] },
+  berlin:   { sky: ['#d1d5db', '#9ca3af'], ground: '#4b5563', tile: '#6b7280', edge: '#374151', skyline: '📡🏛️🏢🧱🏢', scenery: ['🌳', '🧸', '🎧'] },
+  madrid:   { sky: ['#fef9c3', '#fbbf24'], ground: '#a16207', tile: '#ca8a04', edge: '#854d0e', skyline: '🏛️⛪🏢🌇🏟️', scenery: ['☀️', '🥘', '💃'] },
+  toronto:  { sky: ['#bfdbfe', '#60a5fa'], ground: '#1e40af', tile: '#2563eb', edge: '#1e3a8a', skyline: '🗼🏙️🏢🍁🏢', scenery: ['🍁', '🏒', '🦫'] },
+  dublin:   { sky: ['#d9f99d', '#4ade80'], ground: '#166534', tile: '#15803d', edge: '#14532d', skyline: '⛪🏰🏢🌉🍺', scenery: ['☘️', '🐑', '🌈'] },
+  tokyo:    { sky: ['#fbcfe8', '#f472b6'], ground: '#9d174d', tile: '#be185d', edge: '#831843', skyline: '🗼🌸🏯🏙️🗻', scenery: ['🌸', '🏮', '🍜'] },
+  sydney:   { sky: ['#a5f3fc', '#22d3ee'], ground: '#0e7490', tile: '#0891b2', edge: '#155e75', skyline: '🎭🌉🏙️🌊🏄', scenery: ['🌊', '🐨', '🏄'] },
+  london:   { sky: ['#cbd5e1', '#64748b'], ground: '#334155', tile: '#475569', edge: '#1e293b', skyline: '🎡🏰🕰️🏙️☂️', scenery: ['☂️', '💂', '🚌'] },
+  nyc:      { sky: ['#fda4af', '#6366f1'], ground: '#312e81', tile: '#4338ca', edge: '#1e1b4b', skyline: '🗽🏙️🌆🏙️🌉', scenery: ['🚕', '🗽', '🥨'] },
+};
+
+// Isometric tile slots (10 assets: 9 archetypes + landmark center)
+const SLOTS = [
+  [90, 118], [180, 108], [270, 118],
+  [50, 168], [310, 168],
+  [88, 222], [272, 222],
+  [140, 262], [220, 262],
+  [180, 178], // landmark — center stage
+];
+const SCENERY_POS = [[26, 145], [334, 140], [30, 265], [330, 268], [180, 305], [120, 300]];
+
+function CityMap({ city, assets, world, ownedCounts, myFlag, onTap }) {
+  const t = CITY_THEMES[city.id] ?? CITY_THEMES.dublin;
+  // paint back-to-front so front buildings overlap correctly
+  const order = assets.map((a, i) => ({ a, slot: SLOTS[i] })).sort((x, y) => x.slot[1] - y.slot[1]);
+  return (
+    <svg viewBox="0 0 360 330" className="w-full rounded-2xl border border-border" style={{ background: t.ground }}>
+      <defs>
+        <linearGradient id={`sky-${city.id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={t.sky[0]} /><stop offset="100%" stopColor={t.sky[1]} />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="360" height="96" fill={`url(#sky-${city.id})`} />
+      <text x="180" y="90" textAnchor="middle" fontSize="20" opacity="0.9">{t.skyline}</text>
+
+      {SCENERY_POS.map(([x, y], i) => (
+        <text key={i} x={x} y={y} textAnchor="middle" fontSize="14" opacity="0.8">{t.scenery[i % t.scenery.length]}</text>
+      ))}
+
+      {order.map(({ a, slot: [cx, cy] }) => {
+        const rec = world[a.id];
+        const price = assetPrice(a, ownedCounts);
+        const big = a.landmark;
+        const w = big ? 46 : 38, h = big ? 23 : 19;
+        const flag = rec ? (rec.mine ? (myFlag ?? '🚩') : (getCountryByCode(rec.ownerCountry)?.flag ?? '🚩')) : null;
+        const ownerLabel = rec ? (rec.mine ? 'You' : (rec.ownerName ?? 'Taken').slice(0, 10)) : null;
+        return (
+          <g key={a.id} onClick={() => onTap(a)} style={{ cursor: 'pointer' }}>
+            {/* tile */}
+            <path d={`M ${cx} ${cy - h} L ${cx + w} ${cy} L ${cx} ${cy + h} L ${cx - w} ${cy} Z`}
+              fill={t.tile} stroke={rec?.mine ? '#fbbf24' : t.edge} strokeWidth={rec?.mine ? 2.5 : 1.5} />
+            {/* building */}
+            <text x={cx} y={cy - (big ? 8 : 5)} textAnchor="middle" fontSize={big ? 40 : 28}>{a.emoji}</text>
+            {big && <text x={cx} y={cy - 48} textAnchor="middle" fontSize="12">👑</text>}
+            {/* owner flag on a pole */}
+            {flag && (
+              <>
+                <line x1={cx + (big ? 20 : 16)} y1={cy - (big ? 40 : 30)} x2={cx + (big ? 20 : 16)} y2={cy - (big ? 18 : 12)} stroke="#e5e7eb" strokeWidth="1.5" />
+                <text x={cx + (big ? 27 : 23)} y={cy - (big ? 34 : 25)} textAnchor="middle" fontSize="12">{flag}</text>
+              </>
+            )}
+            {/* price / owner banner */}
+            <rect x={cx - 30} y={cy + h + 2} width="60" height="13" rx="4"
+              fill={rec ? (rec.mine ? '#b45309' : '#111827') : '#111827'} opacity="0.85" />
+            <text x={cx} y={cy + h + 11.5} textAnchor="middle" fontSize="8.5" fontWeight="700"
+              fill={rec ? (rec.mine ? '#fde68a' : '#c4b5fd') : '#fff'}>
+              {rec ? `${flag} ${ownerLabel}` : fmtK(price)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 
 const fmt = n => '$' + Math.round(n).toLocaleString();
 const fmtK = n => n >= 1e6 ? `$${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `$${Math.round(n / 1e3)}k` : fmt(n);
@@ -227,7 +311,6 @@ export default function RealEstate() {
   }
 
   async function handleSell(assetId) {
-    if (!confirm('Sell at market value? 5% agent fee, mortgage repaid from proceeds.')) return;
     const r = await sellProperty(assetId, world, ownedCounts);
     if (r.ok) { toast.success(`Sold for ${fmtK(r.price)} — ${fmtK(r.proceeds)} after fees & mortgage`); refresh(); }
     else toast.error(r.error);
@@ -305,41 +388,27 @@ export default function RealEstate() {
               {ownedCounts[city.id] ?? 0}/10 owned by players{(ownedCounts[city.id] ?? 0) >= 5 ? ' · 📈 high demand is pushing prices up' : ''}
             </p>
 
-            <div className="space-y-2">
-              {getCityAssets(city.id).map(a => {
+            <CityMap
+              city={city}
+              assets={getCityAssets(city.id)}
+              world={world}
+              ownedCounts={ownedCounts}
+              myFlag={getCountryByCode(localStorage.getItem('wealthquest_country'))?.flag}
+              onTap={a => {
                 const rec = world[a.id];
-                const price = assetPrice(a, ownedCounts);
-                const rent = monthlyRent(a, ownedCounts);
-                return (
-                  <div key={a.id} className={`bg-card border rounded-2xl p-3.5 ${a.landmark ? 'border-amber-500/40' : 'border-border'}`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl shrink-0">{a.emoji}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-extrabold text-foreground truncate">{a.name} {a.landmark && '👑'}</p>
-                        <p className="text-[11px] text-muted-foreground">{a.label} · rent {fmt(rent)}/mo · yield {(a.baseYield * 100).toFixed(1)}%</p>
-                        {rec && !rec.mine && <p className="text-[11px] font-bold text-violet-400 mt-0.5">🔒 Owned by {rec.ownerName ?? 'another investor'}</p>}
-                        {rec?.mine && rec.mortgage && <p className="text-[11px] font-bold text-amber-500 mt-0.5">🏦 {fmtK(rec.mortgage.remaining)} left · {fmt(rec.mortgage.payment)}/mo{(rec.mortgage.strikes ?? 0) > 0 ? ` · ⚠️ ${rec.mortgage.strikes}/3 strikes` : ''}</p>}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-black text-foreground">{fmtK(price)}</p>
-                        {!rec && (
-                          <button onClick={() => setBuyAsset(a)}
-                            className="mt-1 text-xs font-extrabold bg-emerald-600 text-white rounded-lg px-3 py-1.5 active:scale-95 transition-all">
-                            Buy
-                          </button>
-                        )}
-                        {rec?.mine && (
-                          <button onClick={() => handleSell(a.id)}
-                            className="mt-1 text-xs font-extrabold bg-muted text-foreground rounded-lg px-3 py-1.5 active:scale-95 transition-all">
-                            Sell
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                if (!rec) { setBuyAsset(a); return; }
+                if (rec.mine) {
+                  const m = rec.mortgage;
+                  const info = m ? ` Mortgage: ${fmtK(m.remaining)} left at ${fmt(m.payment)}/mo.` : '';
+                  if (confirm(`${a.emoji} ${a.name} — sell at market value?${info} 5% agent fee, mortgage repaid from proceeds.`)) handleSell(a.id);
+                  return;
+                }
+                toast(`🔒 ${a.name} is owned by ${rec.ownerName ?? 'another investor'}`);
+              }}
+            />
+            <p className="text-center text-[11px] font-bold text-muted-foreground mt-2">
+              Tap a building — 💰 price to buy · 🚩 flag = owned · gold tile = yours
+            </p>
           </motion.div>
         )}
       </AnimatePresence>
