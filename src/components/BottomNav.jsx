@@ -1,11 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { BookOpen, Swords, TrendingUp, Trophy, User, GalleryVerticalEnd } from 'lucide-react';
+import { BookOpen, Swords, TrendingUp, Trophy, User, GalleryVerticalEnd, Globe2 } from 'lucide-react';
 
 const TABS = [
   { to: '/',           icon: BookOpen,           label: 'Learn'     },
   { to: '/flashcards', icon: GalleryVerticalEnd, label: 'Cards'     },
   { to: '/portfolio',  icon: TrendingUp,         label: 'Portfolio' },
+  { to: '/estate',     icon: Globe2,             label: 'Estate'    },
   { to: '/league',     icon: Trophy,             label: 'League'    },
   { to: '/play',       icon: Swords,             label: 'Play'      },
   { to: '/profile',    icon: User,               label: 'Profile'   },

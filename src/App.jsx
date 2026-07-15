@@ -22,11 +22,12 @@ import ProSuccess from '@/pages/ProSuccess';
 import Calculators from '@/pages/Calculators';
 import GlossarySearch from '@/pages/GlossarySearch';
 import NewsBriefing from '@/pages/NewsBriefing';
+import RealEstate from '@/pages/RealEstate';
 import BottomNav from '@/components/BottomNav';
 import OnboardingModal from '@/components/OnboardingModal';
 import ResetPasswordModal from '@/components/ResetPasswordModal';
 
-const NAV_ROUTES = ['/', '/play', '/portfolio', '/league', '/profile', '/flashcards'];
+const NAV_ROUTES = ['/', '/play', '/portfolio', '/estate', '/league', '/profile', '/flashcards'];
 
 export default function App() {
   const location = useLocation();
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/calculators" element={<Calculators />} />
         <Route path="/glossary" element={<GlossarySearch />} />
         <Route path="/news" element={<NewsBriefing />} />
+        <Route path="/estate" element={<RealEstate />} />
       </Routes>
       {showNav && <BottomNav />}
       <OnboardingModal />

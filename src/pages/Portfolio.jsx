@@ -1626,7 +1626,8 @@ export default function Portfolio() {
   const totalValue = useMemo(() => {
     const shortPnl  = shorts.reduce((sum, s) => sum + (s.entryPrice - (prices[s.assetId]?.price ?? s.entryPrice)) * s.shares, 0);
     const margin    = shorts.reduce((sum, s) => sum + s.entryPrice * s.shares, 0);
-    return cash + investedValue + margin + shortPnl + bondValue;
+    const reEquity  = Number(localStorage.getItem('wq_re_equity') ?? 0); // real-estate equity (value − mortgage debt)
+    return cash + investedValue + margin + shortPnl + bondValue + reEquity;
   }, [investedValue, shorts, prices, cash, bondValue]);
 
   useEffect(() => {
