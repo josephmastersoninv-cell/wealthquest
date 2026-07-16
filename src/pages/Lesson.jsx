@@ -29,33 +29,64 @@ function shuffleArray(arr) {
 }
 
 // ---------- Study phase ----------
+// Progressive micro-cards: one small piece of info per card, three levels.
+// Level 1 = plain definitions (easiest terms first), Level 2 = real examples,
+// Level 3 = why it matters. Same content, smaller bites, rising difficulty.
+const STUDY_TIERS = [
+  { key: 'definition', label: 'Level 1 · The Basics',    hint: 'Tap to see what it means',   emoji: '📖' },
+  { key: 'example',    label: 'Level 2 · Real World',    hint: 'Tap to see a real example',  emoji: '💼' },
+  { key: 'context',    label: 'Level 3 · Why It Matters', hint: 'Tap to see why it matters', emoji: '🧠' },
+];
+
+function buildStudyCards(terms) {
+  // Easiest (shortest definition) terms first — simple → harder
+  const sorted = [...terms].sort((a, b) => a.definition.length - b.definition.length);
+  const cards = [];
+  STUDY_TIERS.forEach((tier, ti) => {
+    sorted.forEach(term => {
+      const text = term[tier.key];
+      if (text) cards.push({ term, tier, ti, text });
+    });
+  });
+  return cards;
+}
+
 function StudyPhase({ terms, colors, onDone }) {
+  const cards = useMemo(() => buildStudyCards(terms), [terms]);
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const term = terms[idx];
+  const card = cards[idx];
 
   const next = () => {
     sounds.cardNext();
     haptics.tap();
-    if (idx < terms.length - 1) { setIdx(i => i + 1); setFlipped(false); }
+    if (idx < cards.length - 1) { setIdx(i => i + 1); setFlipped(false); }
     else onDone();
   };
 
   return (
     <div className="px-4 pb-8">
-      <div className="flex items-center justify-between mb-5">
-        <span className="text-xs font-bold text-muted-foreground">Study · {idx + 1}/{terms.length}</span>
-        <div className="flex gap-1">
-          {terms.map((_, i) => (
-            <div key={i} className={`w-6 h-1.5 rounded-full ${i <= idx ? colors.bg : 'bg-muted'}`} />
-          ))}
-        </div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-bold text-muted-foreground">Study · {idx + 1}/{cards.length}</span>
+        <span className={`text-[11px] font-extrabold ${colors.text}`}>{card.tier.emoji} {card.tier.label}</span>
+      </div>
+      {/* three-segment level progress */}
+      <div className="flex gap-1 mb-5">
+        {STUDY_TIERS.map((t, ti) => {
+          const tierCards = cards.filter(c => c.ti === ti);
+          const done = cards.slice(0, idx + 1).filter(c => c.ti === ti).length;
+          return (
+            <div key={t.key} className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+              <div className={`h-full ${colors.bg} transition-all`} style={{ width: tierCards.length ? `${(done / tierCards.length) * 100}%` : '0%' }} />
+            </div>
+          );
+        })}
       </div>
 
       <div className="relative h-64 mb-5" style={{ perspective: 1200 }}>
         <AnimatePresence mode="wait">
           <motion.div
-            key={term.id + (flipped ? 'b' : 'f')}
+            key={card.term.id + card.tier.key + (flipped ? 'b' : 'f')}
             initial={{ opacity: 0, rotateY: flipped ? -90 : 90 }}
             animate={{ opacity: 1, rotateY: 0 }}
             exit={{ opacity: 0, rotateY: flipped ? 90 : -90 }}
@@ -63,34 +94,31 @@ function StudyPhase({ terms, colors, onDone }) {
             onClick={() => { setFlipped(f => !f); sounds.flip(); }}
             className={`absolute inset-0 rounded-3xl border-2 ${colors.border} bg-card flex flex-col cursor-pointer overflow-hidden`}
           >
-            {/* Coloured top strip for category — visually separated from main content */}
-            <div className={`${colors.bg} px-4 py-2 flex items-center justify-center shrink-0`}>
-              <span className="text-xs font-extrabold uppercase tracking-widest text-white/90">{term.category}</span>
+            <div className={`${colors.bg} px-4 py-2 flex items-center justify-between shrink-0`}>
+              <span className="text-xs font-extrabold uppercase tracking-widest text-white/90">{card.tier.emoji} {card.tier.label.split('· ')[1]}</span>
+              <span className="text-[10px] font-bold text-white/60 uppercase tracking-wide">{card.term.category}</span>
             </div>
 
-            {/* Main card content — centred with generous padding */}
             <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-4">
               {!flipped ? (
                 <>
-                  <p className="text-2xl font-extrabold text-foreground leading-snug">{term.term}</p>
-                  <p className="text-xs text-muted-foreground mt-5">Tap to see definition</p>
+                  <p className="text-2xl font-extrabold text-foreground leading-snug">{card.term.term}</p>
+                  <p className="text-xs text-muted-foreground mt-5">{card.tier.hint}</p>
                 </>
               ) : (
-                <>
-                  <p className="text-sm font-semibold text-foreground leading-relaxed">{term.definition}</p>
-                  {term.example && (
-                    <p className="text-xs text-muted-foreground italic mt-3">e.g. {term.example}</p>
-                  )}
-                </>
+                <p className={`font-semibold text-foreground leading-relaxed ${card.text.length > 180 ? 'text-sm' : 'text-base'}`}>
+                  {card.ti === 1 && <span className="block text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground mb-2">💼 Example</span>}
+                  {card.ti === 2 && <span className="block text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground mb-2">🧠 Why it matters</span>}
+                  {card.text}
+                </p>
               )}
             </div>
-
           </motion.div>
         </AnimatePresence>
       </div>
 
       <Button onClick={next} className={`w-full h-14 font-extrabold rounded-2xl text-white border-0 ${colors.bg}`}>
-        {idx < terms.length - 1 ? 'Next Card' : 'Start Quiz →'}
+        {idx < cards.length - 1 ? 'Next Card' : 'Start Quiz →'}
       </Button>
       <p className="text-xs text-center text-muted-foreground mt-3">Tap the card to flip it</p>
     </div>
