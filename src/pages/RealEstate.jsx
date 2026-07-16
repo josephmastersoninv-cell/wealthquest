@@ -65,7 +65,7 @@ function Globe({ onPickCity }) {
         ctx.fillStyle = glow + '33'; ctx.fill();
         ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2);
         ctx.fillStyle = glow; ctx.fill();
-        ctx.font = 'bold 10px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.textAlign = 'center';
+        ctx.font = 'bold 10px sans-serif, "Noto Color Emoji"'; ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.textAlign = 'center';
         ctx.fillText(`${c.flag} ${c.name}`, px, py - 12);
         s.hits.push({ id: c.id, x: px, y: py });
       });
