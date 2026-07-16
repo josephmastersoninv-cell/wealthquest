@@ -434,8 +434,28 @@ export function simulatePriceTick(prices, multiplier = 5) {
   return next;
 }
 
-// NYSE market hours — returns status object used across Portfolio
+// Market hours — the game market runs 24/7 (real prices while NYSE is open,
+// simulated ticks around the clock), so trading never locks.
 export function getMarketStatus() {
+  const nyStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const ny = new Date(nyStr);
+  return {
+    open: true,
+    preMarket: false,
+    afterHours: false,
+    canTrade: true,
+    label: 'Open 24/7',
+    color: 'emerald',
+    minutesLeft: null,
+    countdown: '',
+    nyTime: `${String(ny.getHours()).padStart(2, '0')}:${String(ny.getMinutes()).padStart(2, '0')} ET`,
+    reason: 'open',
+    reasonText: '',
+  };
+}
+
+// Real NYSE hours (kept for reference/educational content)
+export function getRealMarketStatus() {
   const nyStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
   const ny    = new Date(nyStr);
   const day = ny.getDay();

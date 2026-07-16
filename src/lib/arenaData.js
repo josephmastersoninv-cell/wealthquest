@@ -42,10 +42,10 @@ function hashStr(str) {
   return h >>> 0;
 }
 
-// Is today a weekend in NY? (stocks won't move → crypto-only arena)
+// The market now runs 24/7 (simulated ticks around the clock), so the arena
+// always uses the full stock + crypto pool — no weekend crypto-only mode.
 export function isWeekendArena() {
-  const nyDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay();
-  return nyDay === 0 || nyDay === 6;
+  return false;
 }
 
 // 5 assets for today — deterministic, same for all players
