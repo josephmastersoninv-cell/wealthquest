@@ -394,7 +394,7 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, m
                   : mode === 'sell' ? maxSell
                   : mode === 'short' ? cash           // margin = cost of shares
                   : maxCover;                          // cover = buy-back value
-  const canReview = amt > 0 && shares > 0 && amt <= activeMax && tradeable;
+  const canReview = amt > 0 && shares > 0 && amt <= activeMax + 0.01 && tradeable;
   const cashAfter = mode === 'buy'   ? cash - amt
                   : mode === 'sell'  ? cash + amt
                   : mode === 'short' ? cash - amt      // collateral posted
@@ -728,7 +728,7 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, m
 
             <div className="grid grid-cols-4 gap-1.5 mb-2">
               {[{ l:'25%', v: activeMax*.25 }, { l:'50%', v: activeMax*.50 }, { l:'75%', v: activeMax*.75 }, { l:'Max', v: activeMax }].map(({ l, v }) => (
-                <button key={l} onClick={() => setDollars(v.toFixed(2))}
+                <button key={l} onClick={() => setDollars(String(Math.floor(v * 100) / 100))}
                   className="rounded-lg py-2 text-xs font-extrabold active:scale-95 transition-all"
                   style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>{l}</button>
               ))}
@@ -1086,7 +1086,7 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
   const shares = price > 0 ? amt / price : 0;
   const maxSell   = holding ? holding.shares * price : 0;
   const activeMax = mode === 'buy' ? cash : maxSell;
-  const canReview = amt > 0 && shares > 0 && amt <= activeMax && tradeable;
+  const canReview = amt > 0 && shares > 0 && amt <= activeMax + 0.01 && tradeable;
   const cashAfter = mode === 'buy' ? cash - amt : cash + (shares * price);
   const changeInfo = asset.change ?? 0;
   const positive = changeInfo >= 0;
@@ -1214,7 +1214,7 @@ function TradeModal({ asset, price, onClose, onTrade, cash, holding, marketStatu
                 ? [{ l: '10%', v: activeMax * 0.10 }, { l: '25%', v: activeMax * 0.25 }, { l: '50%', v: activeMax * 0.50 }, { l: 'All', v: activeMax }]
                 : [{ l: '25%', v: maxSell * 0.25 }, { l: '50%', v: maxSell * 0.50 }, { l: '75%', v: maxSell * 0.75 }, { l: 'All', v: maxSell }]
               ).map(({ l, v }) => (
-                <button key={l} onClick={() => setDollars(v.toFixed(2))}
+                <button key={l} onClick={() => setDollars(String(Math.floor(v * 100) / 100))}
                   className="bg-muted rounded-xl py-2 text-xs font-extrabold text-muted-foreground active:scale-95 hover:bg-muted/70 transition-colors">
                   {l}
                 </button>
@@ -1709,6 +1709,8 @@ export default function Portfolio() {
     };
 
     if (mode === 'buy') {
+      // Clamp tiny drift (Max pressed, then price/cash moved a cent) to all-in
+      if (dollars > p.cash && dollars - p.cash <= 1) { dollars = p.cash; shares = dollars / price; }
       if (dollars > p.cash) return;
       const ex = p.holdings.find(h => h.assetId === asset.id);
       if (ex) {
@@ -1721,7 +1723,10 @@ export default function Portfolio() {
       p.cash -= dollars;
     } else if (mode === 'sell') {
       const h = p.holdings.find(h => h.assetId === asset.id);
-      if (!h || h.shares < shares - 0.000001) return;
+      if (!h) return;
+      // Selling "All" with a moved price → clamp to the entire holding
+      if (shares > h.shares && shares - h.shares <= h.shares * 0.02 + 0.000001) shares = h.shares;
+      if (h.shares < shares - 0.000001) return;
       h.shares -= shares;
       if (h.shares < 0.0001) p.holdings = p.holdings.filter(x => x.assetId !== asset.id);
       p.cash += price * shares;

@@ -58,10 +58,13 @@ export function executeTrade(assetId, dollars, mode = 'buy') {
   const p = getPortfolio();
   p.holdings = [...(p.holdings ?? [])];
   p.trades   = [...(p.trades ?? [])];
-  const shares = dollars / price;
 
+  let shares;
   if (mode === 'buy') {
+    // "Max" plus a cent of drift (price tick / rounding) means all-in, not an error
+    if (dollars > p.cash && dollars - p.cash <= 1) dollars = p.cash;
     if (dollars > p.cash + 0.001) return { ok: false, error: 'Not enough cash' };
+    shares = dollars / price;
     const ex = p.holdings.find(h => h.assetId === assetId);
     if (ex) {
       const tot = ex.shares + shares;
@@ -73,7 +76,13 @@ export function executeTrade(assetId, dollars, mode = 'buy') {
     p.cash -= dollars;
   } else {
     const h = p.holdings.find(x => x.assetId === assetId);
-    if (!h || h.shares * price < dollars - 0.01) return { ok: false, error: 'Not enough shares to sell' };
+    if (!h) return { ok: false, error: 'Not enough shares to sell' };
+    const holdingValue = h.shares * price;
+    // Selling "Max" after the price ticked down → sell the whole holding
+    if (dollars > holdingValue && dollars - holdingValue <= holdingValue * 0.02 + 1) dollars = holdingValue;
+    if (holdingValue < dollars - 0.01) return { ok: false, error: 'Not enough shares to sell' };
+    shares = dollars / price;
+    if (shares > h.shares) shares = h.shares;
     h.shares -= shares;
     if (h.shares < 0.0001) p.holdings = p.holdings.filter(x => x.assetId !== assetId);
     p.cash += dollars;

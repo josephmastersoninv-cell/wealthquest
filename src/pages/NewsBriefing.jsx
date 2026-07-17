@@ -51,6 +51,8 @@ function TradePanel({ symbol }) {
   const holding = getHolding(assetId);
   const holdingValue = holding && price ? holding.shares * price : 0;
   const tradable = canTradeAsset(assetId);
+  // MAX = everything available on either side: all your cash (buy) or the whole holding (sell)
+  const maxAmt = Math.floor(Math.max(cash, holdingValue) * 100) / 100;
 
   const doTrade = (mode) => {
     const dollars = mode === 'sell' ? Math.min(amount, holdingValue) : amount;
@@ -91,8 +93,8 @@ function TradePanel({ symbol }) {
                 ${v}
               </button>
             ))}
-            <button onClick={() => setAmount(Math.floor(cash))}
-              className={`flex-1 py-2 rounded-lg text-xs font-extrabold transition-all ${amount === Math.floor(cash) ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}>
+            <button onClick={() => setAmount(maxAmt)}
+              className={`flex-1 py-2 rounded-lg text-xs font-extrabold transition-all ${amount === maxAmt ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}>
               MAX
             </button>
           </div>
