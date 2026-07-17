@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { fetchNews } from '@/lib/newsClient';
+import { getMonthEvents } from '@/lib/realEstateData';
 import { executeTrade, getPortfolio, getLivePriceById, canTradeAsset, getHolding } from '@/lib/tradeActions';
 import marketSim from '@/lib/marketSim';
 import { toast } from 'sonner';
@@ -16,6 +17,7 @@ const SYMBOL_TO_ASSET = {
 
 const TYPE_LABEL = {
   news:         { label: 'MARKETS',      color: '#e11d48' },
+  city_event:   { label: 'CITY EVENT',   color: '#0891b2' },
   central_bank: { label: 'CENTRAL BANK', color: '#d97706' },
   rumour:       { label: 'UNVERIFIED',   color: '#7c3aed' },
 };
@@ -167,6 +169,15 @@ function StoryPage({ item, isLast, onFinish }) {
           <p className="text-xs text-violet-500 font-bold mt-3">⚠️ Unverified — treat as rumour, not fact.</p>
         )}
 
+        {/* City-event CTA */}
+        {item.cityId && (
+          <button
+            onClick={e => { e.stopPropagation(); window.location.href = '/estate'; }}
+            className="w-full h-12 mt-4 rounded-xl bg-cyan-700 text-white font-extrabold text-sm active:scale-95 transition-all">
+            {item.cityFlag} View {item.cityName} on the Estate map → ({item.pct > 0 ? '+' : ''}{item.pct}%)
+          </button>
+        )}
+
         {/* Trade panel */}
         {primarySymbol && <TradePanel symbol={primarySymbol} />}
 
@@ -199,7 +210,23 @@ export default function NewsBriefing() {
 
   useEffect(() => {
     marketSim.init();
-    fetchNews().then(items => { setNews(items); setLoading(false); });
+    fetchNews().then(items => {
+      const eventStories = getMonthEvents().map(ev => ({
+        type: 'city_event',
+        title: `${ev.emoji} ${ev.title}`,
+        desc: `${ev.desc} Property prices in ${ev.city.name} are moving ${ev.pct > 0 ? 'up' : 'down'} ${Math.abs(ev.pct)}% this month.`,
+        source: 'Global Property Desk',
+        date: null,
+        sentiment: ev.boom ? 'positive' : 'negative',
+        stocks: [],
+        cityId: ev.cityId,
+        cityName: ev.city.name,
+        cityFlag: ev.city.flag,
+        pct: ev.pct,
+      }));
+      setNews([...items, ...eventStories]);
+      setLoading(false);
+    });
   }, []);
 
   function handleFinish() {

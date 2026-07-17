@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X } from 'lucide-react';
-import { CITIES, getCityById, getCityAssets, getAssetById, assetPrice, monthlyRent, cityTrend, currentGameMonth, MIN_DOWN_PCT, MORTGAGE_RATES, monthlyPayment } from '@/lib/realEstateData';
-import { fetchWorldOwnership, ownedCountsByCity, buyProperty, sellProperty, collectRent, pendingRent, settleMyProperties, myRealEstateEquity } from '@/lib/realEstateEngine';
+import { CITIES, getCityById, getCityAssets, getAssetById, assetPrice, monthlyRent, cityTrend, currentGameMonth, MIN_DOWN_PCT, MORTGAGE_RATES, monthlyPayment, getCityEvent, getMonthEvents } from '@/lib/realEstateData';
+import { fetchWorldOwnership, ownedCountsByCity, buyProperty, sellProperty, collectRent, pendingRent, settleMyProperties, myRealEstateEquity, propertyMeta, isVacant, rentMult, upgradeCost, upgradeProperty, fillVacancy, MAX_UPGRADE_LEVEL } from '@/lib/realEstateEngine';
 import { getPortfolio } from '@/lib/tradeActions';
 import { getCountryByCode } from '@/lib/countryData';
 import marketSim from '@/lib/marketSim';
@@ -261,7 +261,9 @@ function CityMap({ city, assets, world, ownedCounts, myFlag, onTap }) {
         const price = assetPrice(a, ownedCounts);
         const base = t.bld[idx % t.bld.length];
         const flag = rec ? (rec.mine ? (myFlag ?? '🚩') : (getCountryByCode(rec.ownerCountry)?.flag ?? '🚩')) : null;
-        const ownerLabel = rec ? (rec.mine ? 'You' : (rec.ownerName ?? 'Taken').slice(0, 9)) : null;
+        const vac = rec?.mine && isVacant(a.id);
+        const lvl = rec?.mine ? propertyMeta(a.id).level : 0;
+        const ownerLabel = rec ? (rec.mine ? (vac ? 'VACANT' : 'You' + (lvl ? ' ' + '★'.repeat(lvl) : '')) : (rec.ownerName ?? 'Taken').slice(0, 9)) : null;
         const H = spec.H;
         return (
           <motion.g key={a.id} onClick={() => onTap(a)} style={{ cursor: 'pointer', transformBox: 'fill-box', transformOrigin: '50% 100%' }}
@@ -279,7 +281,7 @@ function CityMap({ city, assets, world, ownedCounts, myFlag, onTap }) {
               <text x={cx + 7} y={cy - H - (spec.roof ? 27 : 13)} textAnchor="middle" fontSize="11">{flag}</text>
             </>}
             <rect x={cx - 27} y={cy + spec.w / 2 + 5} width="54" height="12.5" rx="6"
-              fill={rec ? (rec.mine ? '#b45309' : '#111827') : '#111827'} opacity="0.88" />
+              fill={rec ? (rec.mine ? (vac ? '#9f1239' : '#b45309') : '#111827') : '#111827'} opacity="0.88" />
             <text x={cx} y={cy + spec.w / 2 + 14} textAnchor="middle" fontSize="8" fontWeight="800"
               fill={rec ? (rec.mine ? '#fde68a' : '#c4b5fd') : '#f9fafb'}>
               {rec ? `${flag} ${ownerLabel}` : fmtK(price)}
@@ -364,11 +366,76 @@ function BuySheet({ asset, ownedCounts, onClose, onBought }) {
   );
 }
 
+// ── Owned-property action sheet: upgrade, fill vacancy, sell ────────────────
+function PropertySheet({ asset, rec, ownedCounts, onClose, onChanged, onSell }) {
+  const price = assetPrice(asset, ownedCounts);
+  const meta = propertyMeta(asset.id);
+  const vacant = isVacant(asset.id);
+  const rent = Math.round(monthlyRent(asset, ownedCounts) * rentMult(asset.id));
+  const upCost = upgradeCost(asset, ownedCounts);
+  const cash = getPortfolio().cash ?? 0;
+
+  return (
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={onClose}
+        className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" />
+      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+        className="fixed bottom-0 left-0 right-0 z-[70] bg-card rounded-t-3xl p-5 pb-8 max-w-lg mx-auto">
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <p className="text-lg font-black text-foreground">{asset.name}</p>
+            <p className="text-xs text-muted-foreground">{asset.label} · worth {fmtK(price)} · you paid {fmtK(rec.purchasePrice ?? price)}</p>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+        </div>
+
+        <div className="flex gap-2 mb-3">
+          <div className={`flex-1 rounded-xl p-3 ${vacant ? 'bg-rose-500/10' : 'bg-emerald-500/10'}`}>
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Rent</p>
+            <p className={`text-lg font-black ${vacant ? 'text-rose-500' : 'text-emerald-500'}`}>{vacant ? 'VACANT' : `${fmt(rent)}/mo`}</p>
+            {vacant && <p className="text-[10px] text-muted-foreground">No tenant — no rent</p>}
+          </div>
+          <div className="flex-1 bg-muted rounded-xl p-3">
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Renovation</p>
+            <p className="text-lg font-black text-foreground">{'★'.repeat(meta.level) || '—'}<span className="text-muted-foreground">{'☆'.repeat(MAX_UPGRADE_LEVEL - meta.level)}</span></p>
+            <p className="text-[10px] text-muted-foreground">+15% rent per star</p>
+          </div>
+        </div>
+
+        {rec.mortgage && (
+          <p className="text-[11px] font-bold text-amber-500 mb-3">🏦 Mortgage: {fmtK(rec.mortgage.remaining)} left · {fmt(rec.mortgage.payment)}/mo{(rec.mortgage.strikes ?? 0) > 0 ? ` · ⚠️ ${rec.mortgage.strikes}/3 strikes` : ''}</p>
+        )}
+
+        <div className="space-y-2">
+          {vacant && (
+            <button onClick={() => { const r = fillVacancy(asset.id, ownedCounts); r.ok ? (toast.success(`📢 New tenant found! (−${fmt(r.fee)} agent fee)`), onChanged()) : toast.error(r.error); }}
+              className="w-full h-12 rounded-xl bg-sky-600 text-white font-extrabold text-sm active:scale-95 transition-all">
+              📢 Advertise for a tenant — {fmtK(Math.round(price * 0.03))} fee
+            </button>
+          )}
+          {meta.level < MAX_UPGRADE_LEVEL && (
+            <button disabled={cash < upCost}
+              onClick={() => { const r = upgradeProperty(asset.id, ownedCounts); r.ok ? (toast.success(`🔨 Renovated to ${'★'.repeat(r.level)} — rent up 15%!`), onChanged()) : toast.error(r.error); }}
+              className="w-full h-12 rounded-xl bg-emerald-600 text-white font-extrabold text-sm active:scale-95 transition-all disabled:opacity-40">
+              🔨 Renovate ({'★'.repeat(meta.level + 1)}) — {fmtK(upCost)}
+            </button>
+          )}
+          <button onClick={onSell}
+            className="w-full h-12 rounded-xl bg-muted text-foreground font-extrabold text-sm active:scale-95 transition-all">
+            🏷️ Sell at market — {fmtK(price)} (5% fee{rec.mortgage ? ', mortgage repaid' : ''})
+          </button>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function RealEstate() {
   const [world, setWorld] = useState({});
   const [cityId, setCityId] = useState(null);
   const [buyAsset, setBuyAsset] = useState(null);
+  const [manageAsset, setManageAsset] = useState(null);
   const [loading, setLoading] = useState(true);
   const [, force] = useState(0);
 
@@ -379,6 +446,7 @@ export default function RealEstate() {
       if (ev.type === 'liquidated') toast.warning(`🏦 ${ev.detail}`);
       if (ev.type === 'strike') toast.error(`⚠️ Missed mortgage payment (${ev.strikes}/3) on ${getAssetById(ev.assetId)?.name}`);
       if (ev.type === 'repossessed') toast.error(`🏚️ ${getAssetById(ev.assetId)?.name} was repossessed by the bank`);
+      if (ev.type === 'vacancy') toast.warning(`🚪 Your tenant left ${getAssetById(ev.assetId)?.name}! No rent until month ${ev.until + 1} — or pay an agent to refill it.`);
     });
     setWorld({ ...w });
     // Cache equity so the Portfolio page can fold it into net worth
@@ -458,7 +526,7 @@ export default function RealEstate() {
                 return (
                   <button key={c.id} onClick={() => setCityId(c.id)}
                     className="bg-card border border-border rounded-xl px-2 py-2 text-left active:scale-95 transition-all">
-                    <p className="text-xs font-extrabold text-foreground truncate">{c.flag} {c.name}</p>
+                    <p className="text-xs font-extrabold text-foreground truncate">{c.flag} {c.name} {getCityEvent(c.id) ? getCityEvent(c.id).emoji : ''}</p>
                     <p className={`text-[10px] font-bold ${t.dir > 0 ? 'text-amber-500' : t.dir < 0 ? 'text-sky-400' : 'text-muted-foreground'}`}>
                       {t.emoji} {t.label} {t.pct >= 0 ? '+' : ''}{t.pct.toFixed(1)}%
                     </p>
@@ -482,6 +550,12 @@ export default function RealEstate() {
               ); })()}
             </div>
             <p className="text-xs text-muted-foreground mb-1">{city.vibe}</p>
+            {(() => { const ev = getCityEvent(city.id); return ev ? (
+              <div className={`rounded-xl px-3 py-2 mb-2 border ${ev.boom ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-rose-500/10 border-rose-500/25'}`}>
+                <p className="text-xs font-extrabold text-foreground">{ev.emoji} {ev.title}</p>
+                <p className={`text-[11px] font-bold ${ev.boom ? 'text-emerald-500' : 'text-rose-500'}`}>Prices {ev.pct > 0 ? '+' : ''}{ev.pct}% this month</p>
+              </div>
+            ) : null; })()}
             <p className="text-[11px] font-bold text-muted-foreground mb-3">
               {ownedCounts[city.id] ?? 0}/10 owned by players{(ownedCounts[city.id] ?? 0) >= 5 ? ' · 📈 high demand is pushing prices up' : ''}
             </p>
@@ -495,12 +569,7 @@ export default function RealEstate() {
               onTap={a => {
                 const rec = world[a.id];
                 if (!rec) { setBuyAsset(a); return; }
-                if (rec.mine) {
-                  const m = rec.mortgage;
-                  const info = m ? ` Mortgage: ${fmtK(m.remaining)} left at ${fmt(m.payment)}/mo.` : '';
-                  if (confirm(`${a.emoji} ${a.name} — sell at market value?${info} 5% agent fee, mortgage repaid from proceeds.`)) handleSell(a.id);
-                  return;
-                }
+                if (rec.mine) { setManageAsset(a); return; }
                 toast(`🔒 ${a.name} is owned by ${rec.ownerName ?? 'another investor'}`);
               }}
             />
@@ -517,6 +586,14 @@ export default function RealEstate() {
         <BuySheet asset={buyAsset} ownedCounts={ownedCounts}
           onClose={() => setBuyAsset(null)}
           onBought={() => { setBuyAsset(null); refresh(); }} />
+      )}
+
+      {/* Owned-property management sheet */}
+      {manageAsset && world[manageAsset.id]?.mine && (
+        <PropertySheet asset={manageAsset} rec={world[manageAsset.id]} ownedCounts={ownedCounts}
+          onClose={() => setManageAsset(null)}
+          onChanged={() => { setManageAsset(null); refresh(); }}
+          onSell={() => { setManageAsset(null); handleSell(manageAsset.id); }} />
       )}
     </div>
   );

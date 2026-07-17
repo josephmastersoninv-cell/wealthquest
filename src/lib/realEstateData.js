@@ -143,7 +143,53 @@ export function demandMult(cityId, ownedCounts = {}) {
 }
 
 export function assetPrice(asset, ownedCounts = {}, month = currentGameMonth()) {
-  return Math.round(asset.basePrice * cityCycleMult(asset.cityId, month) * newsNudge(asset.cityId) * demandMult(asset.cityId, ownedCounts));
+  return Math.round(asset.basePrice * cityCycleMult(asset.cityId, month) * newsNudge(asset.cityId) * demandMult(asset.cityId, ownedCounts) * eventMult(asset.cityId, month));
+}
+
+// ── City events ─────────────────────────────────────────────────────────────
+// 2–3 cities get a random event each game month — deterministic (same for
+// every player) so the shared-world prices stay consistent.
+const EVENT_TEMPLATES = {
+  boom: [
+    c => ({ emoji: '🏗️', title: `Tech campus announced in ${c.name}`, desc: `A major tech employer is opening a campus in ${c.name}. Landlords expect a wave of new tenants and rising property demand.` }),
+    c => ({ emoji: '🚇', title: `New metro line opens in ${c.name}`, desc: `The new transit line just cut commute times across ${c.name} — well-connected neighbourhoods are seeing prices climb.` }),
+    c => ({ emoji: '🏟️', title: `${c.name} wins bid to host world games`, desc: `Hotels, rentals and commercial space in ${c.name} are heating up ahead of the influx of visitors and investment.` }),
+    c => ({ emoji: '🏦', title: `Interest-rate relief boosts ${c.name} buyers`, desc: `Cheaper borrowing has buyers rushing back into the ${c.name} market. Sellers are raising asking prices.` }),
+  ],
+  bust: [
+    c => ({ emoji: '🌊', title: `Flooding hits parts of ${c.name}`, desc: `Storm flooding has damaged properties across ${c.name}. Insurers are spooked and buyers are pausing.` }),
+    c => ({ emoji: '📉', title: `Major employer leaves ${c.name}`, desc: `A big employer is relocating out of ${c.name}, taking thousands of jobs — and rental demand — with it.` }),
+    c => ({ emoji: '🏚️', title: `Oversupply glut in ${c.name}`, desc: `A construction boom has flooded ${c.name} with unsold units. Prices are softening as sellers compete.` }),
+    c => ({ emoji: '📜', title: `New property tax announced in ${c.name}`, desc: `${c.name} authorities announced higher property taxes, squeezing landlord margins and cooling the market.` }),
+  ],
+};
+
+export function getMonthEvents(month = currentGameMonth()) {
+  const rand = seededRand(hashStr('cityevents-' + month));
+  // seeded fisher-yates over cities
+  const pool = [...CITIES];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const n = 2 + Math.floor(rand() * 2); // 2–3 events
+  return pool.slice(0, n).map(city => {
+    const boom = rand() > 0.45;
+    const tpl = EVENT_TEMPLATES[boom ? 'boom' : 'bust'];
+    const make = tpl[Math.floor(rand() * tpl.length)];
+    const pct = boom ? +(4 + rand() * 6).toFixed(1) : -+(3 + rand() * 5).toFixed(1);
+    return { cityId: city.id, city, boom, pct, month, ...make(city) };
+  });
+}
+
+// Price shock from this month's event (if the city has one)
+export function eventMult(cityId, month = currentGameMonth()) {
+  const ev = getMonthEvents(month).find(e => e.cityId === cityId);
+  return ev ? 1 + ev.pct / 100 : 1;
+}
+
+export function getCityEvent(cityId, month = currentGameMonth()) {
+  return getMonthEvents(month).find(e => e.cityId === cityId) ?? null;
 }
 
 // Monthly rent for an asset at current valuation

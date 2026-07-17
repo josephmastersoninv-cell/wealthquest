@@ -12,6 +12,7 @@ import { adjustCash } from '@/lib/tradeActions';
 import marketSim from '@/lib/marketSim';
 import { useNavigate } from 'react-router-dom';
 import { checkWeeklyReward, claimWeeklyReward, MIN_COMPETITIVE } from '@/lib/leagueRewards';
+import { fetchMyDuels, challengePlayer, respondToDuel, duelGains, settleDuelIfDue, DUEL_PRIZE, DUEL_DAYS } from '@/lib/duelData';
 import { sounds } from '@/lib/sound';
 import { haptics } from '@/lib/haptics';
 import Confetti from '@/components/Confetti';
@@ -92,6 +93,112 @@ function CountryPicker({ onSelect, onClose }) {
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+// ── 1v1 Portfolio Duels ───────────────────────────────────────────────────────
+function DuelsCard({ players }) {
+  const [state, setState] = useState({ duels: [], unavailable: true, uid: null });
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const r = await fetchMyDuels();
+    setState(r);
+    for (const d of (r.duels ?? [])) {
+      const res = await settleDuelIfDue(d);
+      if (res?.won) toast.success(`⚔️ You WON the duel vs ${d.challenger_name === undefined ? '' : (d.challenger_id === r.uid ? d.opponent_name : d.challenger_name)}! +$${DUEL_PRIZE} cash`);
+      else if (res) toast(res.draw ? '⚔️ Duel ended in a draw' : '⚔️ Duel over — you lost this one');
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  if (state.unavailable) return null;
+  const uid = state.uid;
+  const active   = state.duels.filter(d => d.status === 'active');
+  const incoming = state.duels.filter(d => d.status === 'pending' && d.opponent_id === uid);
+  const outgoing = state.duels.filter(d => d.status === 'pending' && d.challenger_id === uid);
+  const recent   = state.duels.filter(d => d.status === 'settled').slice(0, 2);
+
+  async function sendChallenge() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    const r = await challengePlayer(name);
+    setBusy(false);
+    if (r.ok) { toast.success(`⚔️ Challenge sent to ${r.opponent}!`); setName(''); load(); }
+    else toast.error(r.error);
+  }
+
+  const Row = ({ d }) => {
+    const g = duelGains(d, players);
+    const iAmChallenger = d.challenger_id === uid;
+    const meName = iAmChallenger ? d.challenger_name : d.opponent_name;
+    const themName = iAmChallenger ? d.opponent_name : d.challenger_name;
+    const myG = iAmChallenger ? g.challenger : g.opponent;
+    const theirG = iAmChallenger ? g.opponent : g.challenger;
+    const daysLeft = d.ends_at ? Math.max(0, Math.ceil((new Date(d.ends_at) - Date.now()) / 86400000)) : DUEL_DAYS;
+    const fmtG = v => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+    const winning = myG != null && theirG != null && myG > theirG;
+    return (
+      <div className="bg-muted/50 rounded-xl px-3 py-2.5 flex items-center gap-3">
+        <span className="text-lg shrink-0">⚔️</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-extrabold text-foreground truncate">You vs {themName}</p>
+          <p className="text-[11px] font-bold">
+            <span className={myG >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{fmtG(myG)}</span>
+            <span className="text-muted-foreground"> vs </span>
+            <span className={theirG >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{fmtG(theirG)}</span>
+            <span className="text-muted-foreground"> · {daysLeft}d left</span>
+          </p>
+        </div>
+        <span className={`text-[10px] font-extrabold px-2 py-1 rounded-lg shrink-0 ${winning ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
+          {winning ? 'WINNING' : 'BEHIND'}
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="mx-4 mt-4 mb-1 bg-card border border-border rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <p className="font-extrabold text-foreground text-sm">⚔️ Portfolio Duels</p>
+        <p className="text-[10px] font-bold text-muted-foreground">{DUEL_DAYS} days · winner +${DUEL_PRIZE}</p>
+      </div>
+
+      <div className="space-y-2 mb-3">
+        {active.map(d => <Row key={d.id} d={d} />)}
+        {incoming.map(d => (
+          <div key={d.id} className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5 flex items-center gap-2">
+            <p className="flex-1 text-xs font-extrabold text-foreground">🥊 {d.challenger_name} challenged you!</p>
+            <button onClick={async () => { await respondToDuel(d, true); toast.success('Duel on! 7 days — go!'); load(); }}
+              className="text-[11px] font-extrabold bg-emerald-600 text-white rounded-lg px-2.5 py-1.5 active:scale-95">Accept</button>
+            <button onClick={async () => { await respondToDuel(d, false); load(); }}
+              className="text-[11px] font-extrabold bg-muted text-muted-foreground rounded-lg px-2.5 py-1.5 active:scale-95">Decline</button>
+          </div>
+        ))}
+        {outgoing.map(d => (
+          <p key={d.id} className="text-[11px] font-bold text-muted-foreground px-1">⏳ Waiting for {d.opponent_name} to accept…</p>
+        ))}
+        {recent.map(d => (
+          <p key={d.id} className="text-[11px] font-bold px-1">
+            {d.winner_id === uid ? '🏆' : d.winner_id ? '💀' : '🤝'} vs {d.challenger_id === uid ? d.opponent_name : d.challenger_name} — {d.winner_id === uid ? `won +$${DUEL_PRIZE}` : d.winner_id ? 'lost' : 'draw'}
+          </p>
+        ))}
+        {!active.length && !incoming.length && !outgoing.length && !recent.length && (
+          <p className="text-[11px] text-muted-foreground">Challenge any player to a 7-day gains race — biggest % portfolio gain wins.</p>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChallenge()}
+          placeholder="Challenge a username…"
+          className="flex-1 bg-muted rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
+        <button onClick={sendChallenge} disabled={busy || !name.trim()}
+          className="shrink-0 bg-primary text-primary-foreground text-xs font-extrabold px-3.5 rounded-xl active:scale-95 disabled:opacity-40">
+          Duel ⚔️
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -725,6 +832,7 @@ export default function League() {
         {/* ── WEEKLY TAB ── */}
         {tab === 'weekly' && (
           <motion.div key="weekly" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <DuelsCard players={realPlayers} />
             {/* Podium */}
             <div className="px-4 pt-5 pb-3">
               <div className="flex items-end justify-center gap-3">

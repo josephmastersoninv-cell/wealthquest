@@ -145,12 +145,66 @@ export async function sellProperty(assetId, world, ownedCounts = {}) {
   return { ok: true, price, fee, debt, proceeds };
 }
 
+// ── Upgrades & tenants (local per-player meta — only affects YOUR income) ───
+const META_KEY = 'wealthquest_re_meta';
+export const MAX_UPGRADE_LEVEL = 3;
+export const UPGRADE_RENT_BOOST = 0.15; // +15% rent per level
+
+export function getMeta() {
+  try { return JSON.parse(localStorage.getItem(META_KEY) ?? '{}'); } catch { return {}; }
+}
+function setMeta(m) { localStorage.setItem(META_KEY, JSON.stringify(m)); }
+
+export function propertyMeta(assetId) {
+  const m = getMeta()[assetId] ?? {};
+  return { level: m.level ?? 0, vacantUntil: m.vacantUntil ?? 0 };
+}
+export function isVacant(assetId) { return propertyMeta(assetId).vacantUntil > currentGameMonth(); }
+export function rentMult(assetId) { return 1 + propertyMeta(assetId).level * UPGRADE_RENT_BOOST; }
+
+export function upgradeCost(asset, ownedCounts = {}) {
+  return Math.round(assetPrice(asset, ownedCounts) * 0.15);
+}
+
+// Renovate: 15% of value per level → +15% rent forever
+export function upgradeProperty(assetId, ownedCounts = {}) {
+  const asset = getAssetById(assetId);
+  const meta = getMeta();
+  const cur = meta[assetId]?.level ?? 0;
+  if (cur >= MAX_UPGRADE_LEVEL) return { ok: false, error: 'Fully upgraded' };
+  const cost = upgradeCost(asset, ownedCounts);
+  if ((getPortfolio().cash ?? 0) < cost) return { ok: false, error: `Renovation costs $${cost.toLocaleString()} — not enough cash` };
+  adjustCash(-cost);
+  meta[assetId] = { ...(meta[assetId] ?? {}), level: cur + 1 };
+  setMeta(meta);
+  return { ok: true, level: cur + 1, cost };
+}
+
+// Fill a vacancy immediately by paying an agent fee (3% of value)
+export function fillVacancy(assetId, ownedCounts = {}) {
+  const asset = getAssetById(assetId);
+  const fee = Math.round(assetPrice(asset, ownedCounts) * 0.03);
+  if ((getPortfolio().cash ?? 0) < fee) return { ok: false, error: `Agent fee is $${fee.toLocaleString()} — not enough cash` };
+  adjustCash(-fee);
+  const meta = getMeta();
+  meta[assetId] = { ...(meta[assetId] ?? {}), vacantUntil: 0 };
+  setMeta(meta);
+  return { ok: true, fee };
+}
+
+function hashStr2(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
+  return h >>> 0;
+}
+
 // ── Rent collection (tap to collect, capped at 3 months) ───────────────────
 export function pendingRent(rec, ownedCounts = {}) {
   const asset = getAssetById(rec.assetId);
   if (!asset) return 0;
+  if (isVacant(rec.assetId)) return 0; // no tenant, no rent
   const months = Math.min(RENT_CAP_MONTHS, currentGameMonth() - (rec.lastCollectedMonth ?? currentGameMonth()));
-  return Math.max(0, months) * monthlyRent(asset, ownedCounts);
+  return Math.round(Math.max(0, months) * monthlyRent(asset, ownedCounts) * rentMult(rec.assetId));
 }
 
 export async function collectRent(assetId, world, ownedCounts = {}) {
@@ -180,7 +234,36 @@ export async function settleMyProperties(world) {
   const events = [];
 
   for (const [assetId, rec] of Object.entries(world)) {
-    if (!rec.mine || !rec.mortgage) continue;
+    if (!rec.mine) continue;
+
+    // Tenant churn: each elapsed month has an 8% chance the tenant leaves
+    // (deterministic per property+month). Vacancy = no rent for 2 months
+    // unless the player pays an agent fee to refill it.
+    {
+      const from = rec.lastSettledMonth ?? month;
+      const meta = getMeta();
+      const pm = meta[assetId] ?? {};
+      for (let m = from + 1; m <= month; m++) {
+        if ((pm.vacantUntil ?? 0) > m) continue; // already vacant
+        const roll = (hashStr2(assetId + ':' + m) % 1000) / 1000;
+        if (roll < 0.08) {
+          pm.vacantUntil = m + 2;
+          meta[assetId] = pm;
+          setMeta(meta);
+          events.push({ type: 'vacancy', assetId, until: m + 2 });
+          break;
+        }
+      }
+      if (!rec.mortgage) {
+        // still advance the settle clock for unmortgaged properties
+        const user = await authUser();
+        if (user && !rec.local) await supabase.from('properties').update({ last_settled_month: month }).eq('asset_id', assetId).eq('owner_id', user.id);
+        else { const local = readLocal(); if (local[assetId]) { local[assetId].lastSettledMonth = month; writeLocal(local); } }
+        world[assetId] = { ...rec, lastSettledMonth: month };
+        continue;
+      }
+    }
+
     const owed = Math.max(0, month - (rec.lastSettledMonth ?? month));
     if (owed === 0) continue;
 

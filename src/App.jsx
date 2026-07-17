@@ -26,6 +26,7 @@ import RealEstate from '@/pages/RealEstate';
 import BottomNav from '@/components/BottomNav';
 import OnboardingModal from '@/components/OnboardingModal';
 import ResetPasswordModal from '@/components/ResetPasswordModal';
+import NewsNudge from '@/components/NewsNudge';
 
 const NAV_ROUTES = ['/', '/play', '/portfolio', '/estate', '/league', '/profile', '/flashcards'];
 
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/estate" element={<RealEstate />} />
       </Routes>
       {showNav && <BottomNav />}
+      {showNav && <NewsNudge />}
       <OnboardingModal />
       <ResetPasswordModal />
     </AuthProvider>
