@@ -7,15 +7,12 @@ import { generateRecruitPool, getSquad, recruitPlayer, dismissPlayer, SQUAD_MAX,
 import { getDailyAdvice } from '@/lib/advisorData';
 import { fetchXpLeaderboard, fetchCountryTotals, fetchPlayersByCountry, subscribeToLeaderboard, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { useAuth } from '@/lib/authContext';
-import { getTodayArenaStocks, getTodayPicks, savePicks, canRevealResults, resolvePicksNow, getPendingResults, claimResults, getTimeUntilReveal, getLivePrice, isWeekendArena } from '@/lib/arenaData';
-import { adjustCash } from '@/lib/tradeActions';
-import marketSim from '@/lib/marketSim';
-import { useNavigate } from 'react-router-dom';
 import { checkWeeklyReward, claimWeeklyReward, MIN_COMPETITIVE } from '@/lib/leagueRewards';
 import { fetchMyDuels, challengePlayer, respondToDuel, duelGains, settleDuelIfDue, DUEL_PRIZE, DUEL_DAYS } from '@/lib/duelData';
 import { sounds } from '@/lib/sound';
 import { haptics } from '@/lib/haptics';
 import Confetti from '@/components/Confetti';
+import NewsHub from '@/components/NewsHub';
 import { toast } from 'sonner';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -248,10 +245,8 @@ function RecruitCard({ player, inSquad, squadFull, onRecruit, onDismiss, coins }
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function League() {
-  const navigate = useNavigate();
   const { progress, updateProgress } = useUserProgress();
   const { player: authPlayer, isAuthenticated } = useAuth();
-  const briefingReadToday = localStorage.getItem('wealthquest_briefing_read') === new Date().toISOString().slice(0, 10);
   const myXp        = progress?.xp ?? 0;
   const myCoins     = progress?.coins ?? 0;
   const myPortfolio = (() => {
@@ -266,18 +261,13 @@ export default function League() {
   })();
   const league      = getCurrentLeague(myXp);
 
-  const [tab, setTab]         = useState('arena');
+  const [tab, setTab]         = useState('news');
   const [timeLeft, setTimeLeft] = useState(getTimeUntilReset);
   const [myCountry, setMyCountryState] = useState(getMyCountry);
   const [showPicker, setShowPicker]   = useState(false);
   const [squad, setSquad]     = useState(getSquad);
 
   // Arena state
-  const [arenaStocks]       = useState(getTodayArenaStocks);
-  const [selections, setSelections] = useState({}); // { symbol: 'up'|'down' }
-  const [submitted, setSubmitted]   = useState(() => getTodayPicks());
-  const [results, setResults]       = useState(() => getPendingResults());
-  const [timeUntilReveal, setTimeUntilReveal] = useState(getTimeUntilReveal);
   const [realPlayers, setRealPlayers] = useState([]);
   const [realCountryTotals, setRealCountryTotals] = useState(null);
   const [selectedCountry, setSelectedCountry] = useState(null); // country object for drill-down sheet
@@ -290,25 +280,6 @@ export default function League() {
   useEffect(() => {
     const t = setInterval(() => setTimeLeft(getTimeUntilReset()), 60000);
     return () => clearInterval(t);
-  }, []);
-
-  // Poll arena reveal timer every 30s
-  useEffect(() => {
-    const t = setInterval(() => {
-      setTimeUntilReveal(getTimeUntilReveal());
-      if (canRevealResults()) {
-        const r = resolvePicksNow();
-        if (r) setResults(r);
-      }
-    }, 30000);
-    return () => clearInterval(t);
-  }, []);
-
-  // Live prices for the arena — real entry snapshots & live pick tracking
-  const [, setPriceTick] = useState(0);
-  useEffect(() => {
-    marketSim.init();
-    return marketSim.onPrices(() => setPriceTick(t => t + 1));
   }, []);
 
   useEffect(() => {
@@ -451,36 +422,8 @@ export default function League() {
     toast.success(`${getCountryByCode(code)?.flag} Country set to ${getCountryByCode(code)?.name}!`);
   }
 
-  function handleSelect(symbol, dir) {
-    setSelections(prev => ({ ...prev, [symbol]: prev[symbol] === dir ? undefined : dir }));
-  }
-
-  function handleSubmitPicks() {
-    const picks = arenaStocks.map(s => ({ symbol: s.symbol, direction: selections[s.symbol] }));
-    savePicks(picks);
-    setSubmitted(getTodayPicks());
-    toast.success('Picks locked in! Results in 1 hour 🔒');
-  }
-
-  function handleRevealResults() {
-    const r = resolvePicksNow();
-    if (r) setResults(r);
-  }
-
-  function handleClaimArena() {
-    const r = claimResults();
-    if (!r) return;
-    // Winnings land as real cash in your actual portfolio — no XP
-    adjustCash(r.portfolioChange);
-    setResults({ ...r, claimed: true });
-    const emoji = r.wins === 5 ? '🏆' : r.wins >= 3 ? '🎉' : '💸';
-    toast.success(`${emoji} ${r.wins}/5 correct! ${r.portfolioChange >= 0 ? '+' : ''}$${r.portfolioChange} cash${r.bonusCash > 0 ? ` (incl. 📰 +$${r.bonusCash} informed bonus)` : ''}`);
-  }
-
-  const allPicked = arenaStocks.every(s => selections[s.symbol]);
-
   const tabs = [
-    { id: 'arena',   label: '⚡ Arena'     },
+    { id: 'news',    label: '📰 News'      },
     { id: 'weekly',  label: '🏆 Weekly'    },
     { id: 'country', label: '🌍 Countries' },
     { id: 'squad',   label: '👥 Squad'     },
@@ -583,249 +526,10 @@ export default function League() {
 
       <AnimatePresence>
 
-        {/* ── ARENA TAB ── */}
-        {tab === 'arena' && (
-          <motion.div key="arena" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="px-4 pt-5 pb-6 space-y-4">
-
-            {/* Hero headline */}
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-black text-foreground">Market Clash ⚡</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Pick 5 {isWeekendArena() ? 'cryptos' : 'assets'} UP or DOWN · Resolved by <span className="font-bold text-foreground">real market prices</span> 1h later
-                </p>
-                {isWeekendArena() && (
-                  <p className="text-[10px] font-bold text-amber-400 mt-1">🪙 Weekend mode — crypto only (NYSE is closed, stocks don't move)</p>
-                )}
-              </div>
-              <button
-                onClick={() => navigate('/news?from=arena')}
-                className={`shrink-0 flex items-center gap-1.5 text-xs font-extrabold px-3 py-2 rounded-xl transition-all active:scale-95 ${
-                  briefingReadToday
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-primary text-primary-foreground shadow-md shadow-primary/20 animate-pulse'
-                }`}
-              >
-                {briefingReadToday ? '📰 Briefing read ✓' : '📰 Read Briefing'}
-              </button>
-            </div>
-
-            {/* Briefing nudge — shown if not yet read today and no picks submitted */}
-            {!briefingReadToday && !submitted && !results && (
-              <motion.button
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                onClick={() => navigate('/news?from=arena')}
-                className="w-full bg-gradient-to-r from-blue-900 to-violet-900 border border-blue-500/30 rounded-2xl p-4 flex items-center gap-4 active:scale-[0.98] transition-all"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-2xl shrink-0">📡</div>
-                <div className="flex-1 text-left">
-                  <p className="font-extrabold text-white text-sm">Read Today's Briefing First</p>
-                  <p className="text-xs text-white/60 mt-0.5">Live news & market reports — then make informed picks</p>
-                  <p className="text-[11px] font-extrabold text-amber-300 mt-1">📰 Informed Investor bonus: +50% cash on today's winnings</p>
-                </div>
-                <ChevronDown className="w-4 h-4 text-white/40 -rotate-90 shrink-0" />
-              </motion.button>
-            )}
-
-            {/* ── Results unclaimed ── */}
-            {results && !results.claimed && (
-              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                className="bg-card border border-border rounded-3xl overflow-hidden">
-                <div className={`px-4 py-3 ${results.wins >= 3 ? 'bg-emerald-500/20 border-b border-emerald-500/30' : 'bg-rose-500/10 border-b border-rose-500/20'}`}>
-                  <p className="font-extrabold text-foreground">
-                    {results.wins === 5 ? '🏆 Perfect score!' : results.wins >= 3 ? `🎉 ${results.wins}/5 correct` : `💸 ${results.wins}/5 correct`}
-                  </p>
-                  <p className={`text-sm font-bold mt-0.5 ${results.portfolioChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {results.portfolioChange >= 0 ? '+' : ''}${results.portfolioChange} cash to your portfolio
-                    {results.bonusCash > 0 && <span className="text-amber-400"> (incl. 📰 +${results.bonusCash} informed bonus)</span>}
-                  </p>
-                </div>
-                <div className="p-4 space-y-2">
-                  {results.results.map(r => (
-                    <div key={r.symbol} className="flex items-center gap-3">
-                      <span className={`text-lg ${r.won ? 'grayscale-0' : 'opacity-40'}`}>
-                        {arenaStocks.find(s => s.symbol === r.symbol)?.emoji ?? '📊'}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-bold text-foreground">{r.symbol}</span>
-                        {r.movePct != null && (
-                          <p className={`text-[11px] font-bold ${r.movePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            actual: {r.movePct >= 0 ? '▲' : '▼'} {Math.abs(r.movePct).toFixed(2)}%
-                          </p>
-                        )}
-                      </div>
-                      <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${r.direction === 'up' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                        {r.direction === 'up' ? '📈 UP' : '📉 DOWN'}
-                      </span>
-                      {r.won
-                        ? <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                        : <XCircle className="w-5 h-5 text-rose-400 shrink-0" />}
-                    </div>
-                  ))}
-                </div>
-                <div className="px-4 pb-4">
-                  <button onClick={handleClaimArena}
-                    className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-extrabold text-sm active:scale-95 transition-all">
-                    Claim Rewards 🎁
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── Results already claimed ── */}
-            {results?.claimed && (
-              <div className="bg-muted/40 border border-border rounded-2xl px-4 py-5 text-center">
-                <p className="text-2xl mb-1">✅</p>
-                <p className="font-extrabold text-foreground">Rewards claimed!</p>
-                <p className="text-xs text-muted-foreground mt-1">New picks available tomorrow</p>
-              </div>
-            )}
-
-            {/* ── Picks pending reveal ── */}
-            {submitted && !submitted.resolved && !results && (
-              <div className="bg-card border border-border rounded-3xl overflow-hidden">
-                <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-3 flex items-center gap-3">
-                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                  <div className="flex-1">
-                    <p className="font-extrabold text-foreground text-sm">Picks locked in 🔒</p>
-                    <p className="text-xs text-muted-foreground">
-                      {canRevealResults() ? 'Ready to reveal!' : `Results in ~${timeUntilReveal}`}
-                    </p>
-                  </div>
-                  {canRevealResults() && (
-                    <button onClick={handleRevealResults}
-                      className="bg-primary text-primary-foreground text-xs font-extrabold px-3 py-1.5 rounded-xl active:scale-95">
-                      Reveal!
-                    </button>
-                  )}
-                </div>
-                <div className="p-4 space-y-2.5">
-                  {submitted.picks.map(pick => {
-                    const entry = submitted.entryPrices?.[pick.symbol];
-                    const live  = getLivePrice(pick.symbol);
-                    const movePct = entry && live ? ((live - entry) / entry) * 100 : null;
-                    const winning = movePct === null ? null
-                      : movePct === 0 ? true
-                      : (movePct > 0) === (pick.direction === 'up');
-                    return (
-                      <div key={pick.symbol} className="flex items-center gap-3">
-                        <span className="text-lg">{arenaStocks.find(s => s.symbol === pick.symbol)?.emoji ?? '📊'}</span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-bold text-foreground">{pick.symbol}</span>
-                          {movePct !== null && (
-                            <p className={`text-[11px] font-bold ${movePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {movePct >= 0 ? '▲' : '▼'} {Math.abs(movePct).toFixed(2)}% since lock-in
-                            </p>
-                          )}
-                        </div>
-                        <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${pick.direction === 'up' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                          {pick.direction === 'up' ? '📈 UP' : '📉 DOWN'}
-                        </span>
-                        {winning !== null && (
-                          <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 ${winning ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
-                            {winning ? 'WINNING' : 'LOSING'}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {submitted.briefingBonus && (
-                    <p className="text-[11px] font-extrabold text-amber-400 pt-1">📰 Informed Investor bonus active — +50% cash on winnings</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── Pick phase ── */}
-            {!submitted && !results && (
-              <>
-                <div className="space-y-3">
-                  {arenaStocks.map((stock, i) => {
-                    const sel = selections[stock.symbol];
-                    return (
-                      <motion.div key={stock.symbol}
-                        initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.06 }}
-                        className={`rounded-2xl border-2 transition-all overflow-hidden ${
-                          sel === 'up' ? 'border-emerald-500 bg-emerald-500/5' :
-                          sel === 'down' ? 'border-rose-500 bg-rose-500/5' :
-                          'border-border bg-card'
-                        }`}>
-                        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
-                          <span className="text-3xl">{stock.emoji}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-extrabold text-foreground">{stock.name}</p>
-                            <p className="text-xs text-muted-foreground font-bold">
-                              {stock.symbol}
-                              {(() => {
-                                const p = getLivePrice(stock.symbol);
-                                const chg = marketSim.prices[stock.assetId]?.change;
-                                return p ? <> · <span className="text-foreground">${p >= 100 ? p.toFixed(0) : p.toFixed(2)}</span>{chg != null && <span className={chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}> {chg >= 0 ? '+' : ''}{chg.toFixed(1)}% today</span>}</> : null;
-                              })()}
-                            </p>
-                          </div>
-                          {sel && (
-                            <span className={`text-xs font-extrabold px-2.5 py-1 rounded-xl ${sel === 'up' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                              {sel === 'up' ? '📈 UP' : '📉 DOWN'}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex border-t border-border/50">
-                          <button onClick={() => handleSelect(stock.symbol, 'down')}
-                            className={`flex-1 py-3 text-sm font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
-                              sel === 'down' ? 'bg-rose-500 text-white' : 'text-rose-400 hover:bg-rose-500/10'
-                            }`}>
-                            📉 DOWN
-                          </button>
-                          <div className="w-px bg-border/50" />
-                          <button onClick={() => handleSelect(stock.symbol, 'up')}
-                            className={`flex-1 py-3 text-sm font-extrabold flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
-                              sel === 'up' ? 'bg-emerald-500 text-white' : 'text-emerald-400 hover:bg-emerald-500/10'
-                            }`}>
-                            📈 UP
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-
-                {/* Submit */}
-                <div className="pt-2">
-                  <div className="flex justify-center gap-1 mb-3">
-                    {arenaStocks.map(s => (
-                      <div key={s.symbol} className={`w-2 h-2 rounded-full transition-all ${selections[s.symbol] ? 'bg-primary' : 'bg-muted'}`} />
-                    ))}
-                  </div>
-                  <button
-                    onClick={handleSubmitPicks}
-                    disabled={!allPicked}
-                    className={`w-full h-14 rounded-2xl font-extrabold text-base transition-all ${
-                      allPicked ? 'bg-primary text-primary-foreground active:scale-95 shadow-lg shadow-primary/20' : 'bg-muted text-muted-foreground cursor-not-allowed'
-                    }`}>
-                    {allPicked ? 'Lock In Picks 🔒' : `Pick ${5 - Object.values(selections).filter(Boolean).length} more…`}
-                  </button>
-                  <p className="text-center text-xs text-muted-foreground mt-2">
-                    Correct picks earn $500 · Wrong picks cost $200
-                    {briefingReadToday && <span className="text-amber-400 font-bold"> · 📰 +50% cash bonus active</span>}
-                  </p>
-                </div>
-              </>
-            )}
-
-            {/* How it works */}
-            <div className="bg-muted/40 border border-border rounded-2xl p-4">
-              <p className="text-xs font-extrabold text-foreground mb-2">⚡ How Arena works</p>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <p>• Pick 5 stocks UP or DOWN each day</p>
-                <p>• Results reveal after 1 hour</p>
-                <p>• Correct → <span className="text-emerald-400 font-bold">+$500</span> to portfolio · +30 XP</p>
-                <p>• Wrong → <span className="text-rose-400 font-bold">-$200</span> from portfolio</p>
-                <p>• Perfect 5/5 = bonus +100 XP 🏆</p>
-                <p>• Portfolio value drives your league rank</p>
-              </div>
-            </div>
+        {/* ── NEWS TAB — the info hub: notifications, events, tradable news ── */}
+        {tab === 'news' && (
+          <motion.div key="news" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <NewsHub onOpenDuels={() => setTab('weekly')} />
           </motion.div>
         )}
 
