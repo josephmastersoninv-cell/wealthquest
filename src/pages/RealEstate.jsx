@@ -99,7 +99,7 @@ function Globe({ onPickCity }) {
   };
 
   return (
-    <canvas ref={canvasRef} className="w-full h-[380px] touch-none cursor-grab active:cursor-grabbing"
+    <canvas ref={canvasRef} className="w-full h-[300px] touch-none cursor-grab active:cursor-grabbing"
       onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={() => (state.current.dragging = false)}
       onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} />
   );
@@ -486,32 +486,38 @@ export default function RealEstate() {
 
   return (
     <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto">
-      {/* Header strip */}
+      {/* Hero header */}
       <div className="px-4 pt-6 pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-black text-foreground">🌍 Real Estate</h1>
-            <p className="text-xs text-muted-foreground">Game month {currentGameMonth() + 1} · 1 real week = 1 month</p>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">My equity</p>
-            <p className="text-lg font-black text-emerald-500">{fmtK(equity)}</p>
-          </div>
-        </div>
-
-        {/* Empire strip */}
-        {mine.length > 0 && (
-          <div className="mt-3 bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
-            <div className="flex-1">
-              <p className="text-xs font-extrabold text-foreground">{mine.length} propert{mine.length === 1 ? 'y' : 'ies'} · net flow <span className={monthlyFlow >= 0 ? 'text-emerald-500' : 'text-rose-500'}>{fmt(monthlyFlow)}/mo</span></p>
-              <p className="text-[11px] text-muted-foreground">Cash {fmtK(cash)}{mine.some(r => (r.mortgage?.strikes ?? 0) > 0) && <span className="text-rose-500 font-bold"> · ⚠️ payments in arrears!</span>}</p>
+        <div className="rounded-3xl bg-gradient-to-br from-emerald-900 via-emerald-950 to-slate-950 border border-emerald-500/20 p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-xl font-black text-white">🌍 Real Estate</h1>
+              <p className="text-[11px] font-bold text-emerald-300/70 mt-0.5">Month {currentGameMonth() + 1} · 1 real week = 1 game month</p>
             </div>
-            <button onClick={handleCollectAll}
-              className={`shrink-0 px-3 py-2 rounded-xl text-xs font-extrabold active:scale-95 transition-all ${totalRentDue > 0 ? 'bg-emerald-600 text-white' : 'bg-muted text-muted-foreground'}`}>
-              💰 Collect {totalRentDue > 0 ? fmt(totalRentDue) : 'rent'}
-            </button>
+            <div className="text-right">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-300/60">Equity</p>
+              <p className="text-2xl font-black text-emerald-400 leading-none mt-0.5">{fmtK(equity)}</p>
+            </div>
           </div>
-        )}
+          {mine.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-extrabold text-white">
+                  {mine.length} propert{mine.length === 1 ? 'y' : 'ies'} · <span className={monthlyFlow >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{monthlyFlow >= 0 ? '+' : ''}{fmt(monthlyFlow)}/mo</span>
+                </p>
+                <p className="text-[11px] font-bold text-white/50">
+                  Cash {fmtK(cash)}
+                  {mine.some(r => (r.mortgage?.strikes ?? 0) > 0) && <span className="text-rose-400"> · ⚠️ mortgage in arrears</span>}
+                  {mine.some(r => isVacant(r.assetId)) && <span className="text-amber-400"> · 🚪 vacancy</span>}
+                </p>
+              </div>
+              <button onClick={handleCollectAll}
+                className={`shrink-0 px-3.5 py-2.5 rounded-xl text-xs font-extrabold active:scale-95 transition-all ${totalRentDue > 0 ? 'bg-emerald-500 text-emerald-950 shadow-lg shadow-emerald-500/30' : 'bg-white/10 text-white/50'}`}>
+                💰 {totalRentDue > 0 ? `Collect ${fmt(totalRentDue)}` : 'No rent due'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <AnimatePresence mode="wait">
@@ -519,17 +525,25 @@ export default function RealEstate() {
           /* ── GLOBE ── */
           <motion.div key="globe" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <Globe onPickCity={setCityId} />
-            <p className="text-center text-[11px] font-bold text-muted-foreground -mt-2 mb-3">Spin the globe · tap a city to invest</p>
-            <div className="px-4 grid grid-cols-3 gap-1.5">
+            <p className="text-center text-[11px] font-bold text-muted-foreground -mt-1 mb-3">Spin the globe · tap a city to invest</p>
+            <div className="px-4 grid grid-cols-2 gap-2">
               {CITIES.map(c => {
                 const t = cityTrend(c.id);
+                const ev = getCityEvent(c.id);
+                const cheapest = Math.min(...getCityAssets(c.id).map(a => assetPrice(a, ownedCounts)));
+                const owned = ownedCounts[c.id] ?? 0;
                 return (
                   <button key={c.id} onClick={() => setCityId(c.id)}
-                    className="bg-card border border-border rounded-xl px-2 py-2 text-left active:scale-95 transition-all">
-                    <p className="text-xs font-extrabold text-foreground truncate">{c.flag} {c.name} {getCityEvent(c.id) ? getCityEvent(c.id).emoji : ''}</p>
-                    <p className={`text-[10px] font-bold ${t.dir > 0 ? 'text-amber-500' : t.dir < 0 ? 'text-sky-400' : 'text-muted-foreground'}`}>
-                      {t.emoji} {t.label} {t.pct >= 0 ? '+' : ''}{t.pct.toFixed(1)}%
-                    </p>
+                    className="relative bg-card border border-border rounded-2xl px-3 py-2.5 text-left active:scale-[0.97] transition-all overflow-hidden">
+                    {ev && <span className="absolute top-1.5 right-2 text-sm">{ev.emoji}</span>}
+                    <p className="text-sm font-extrabold text-foreground truncate pr-5">{c.flag} {c.name}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${t.dir > 0 ? 'bg-amber-500/15 text-amber-500' : t.dir < 0 ? 'bg-sky-500/15 text-sky-400' : 'bg-muted text-muted-foreground'}`}>
+                        {t.emoji} {t.pct >= 0 ? '+' : ''}{t.pct.toFixed(1)}%
+                      </span>
+                      <span className="text-[10px] font-bold text-muted-foreground">from {fmtK(cheapest)}</span>
+                    </div>
+                    <p className="text-[10px] font-bold text-muted-foreground/70 mt-1">{owned}/10 owned{owned >= 5 ? ' · 🔥 demand' : ''}</p>
                   </button>
                 );
               })}

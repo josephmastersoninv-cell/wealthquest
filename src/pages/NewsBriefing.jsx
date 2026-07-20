@@ -189,7 +189,7 @@ function StoryPage({ item, isLast, onFinish }) {
             <button
               onClick={e => { e.stopPropagation(); onFinish(); }}
               className="w-full h-13 py-4 rounded-xl bg-foreground text-background font-extrabold text-sm tracking-wide active:scale-95 transition-all">
-              Done — Make Arena Picks ⚡
+              Done — I'm informed ✓
             </button>
           ) : (
             <p className="text-center text-[11px] font-bold tracking-[0.2em] text-muted-foreground/60">TAP TO CONTINUE ▸</p>
@@ -203,7 +203,7 @@ function StoryPage({ item, isLast, onFinish }) {
 export default function NewsBriefing() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const fromArena = searchParams.get('from') === 'arena';
+  const fromHub = ['arena', 'nudge'].includes(searchParams.get('from'));
 
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -233,7 +233,7 @@ export default function NewsBriefing() {
 
   function handleFinish() {
     localStorage.setItem('wealthquest_briefing_read', new Date().toISOString().slice(0, 10));
-    if (fromArena) navigate('/league');
+    if (fromHub) navigate('/league');
     else navigate(-1);
   }
 
@@ -274,10 +274,10 @@ export default function NewsBriefing() {
             <p className="text-foreground font-extrabold text-xl">News unavailable</p>
             <p className="text-muted-foreground text-sm mt-2">Live feeds are temporarily down. Check back in a few minutes.</p>
           </div>
-          {fromArena && (
+          {fromHub && (
             <button onClick={handleFinish}
               className="mt-2 h-12 px-6 rounded-xl bg-foreground text-background font-extrabold text-sm active:scale-95 transition-all">
-              Make Picks Without News →
+              Back to the News hub →
             </button>
           )}
         </div>

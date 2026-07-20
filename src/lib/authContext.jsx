@@ -21,7 +21,31 @@ export function AuthProvider({ children }) {
   }, []);
 
   const refreshPlayer = useCallback(async (userId) => {
-    const p = await fetchPlayer(userId);
+    let p = await fetchPlayer(userId);
+    // Country (and avatar/name) were chosen during sign-up and stored in auth
+    // metadata. If the players row is missing them (email-confirmation flow
+    // never got to save the profile), complete it silently — never ask twice.
+    if (!p?.country_code) {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const meta = authUser?.user_metadata ?? {};
+      if (meta.country_code) {
+        const { data } = await supabase
+          .from('players')
+          .upsert({
+            id: userId,
+            name: p?.name ?? meta.name ?? (authUser?.email?.split('@')[0] ?? 'Investor'),
+            avatar: p?.avatar ?? meta.avatar ?? '🦁',
+            country_code: meta.country_code,
+            updated_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        if (data) {
+          p = data;
+          localStorage.setItem('wealthquest_country', data.country_code);
+        }
+      }
+    }
     setPlayer(p);
     return p;
   }, [fetchPlayer]);

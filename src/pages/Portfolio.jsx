@@ -61,9 +61,13 @@ function Sparkline({ points, positive, width = 64, height = 28 }) {
   );
 }
 
-// ─── Portfolio live chart ─────────────────────────────────────────────────────
+// ─── Portfolio live chart — touch/drag to scrub any point ─────────────────────
 function PortfolioChart({ history, startingCash, livePoints }) {
-  const values = livePoints?.length >= 2
+  const boxRef = useRef(null);
+  const [scrub, setScrub] = useState(null); // index into values, or null
+
+  const useLive = livePoints?.length >= 2;
+  const values = useLive
     ? livePoints
     : history?.length >= 2 ? history.map(h => h.value) : null;
 
@@ -89,25 +93,64 @@ function PortfolioChart({ history, startingCash, livePoints }) {
   const fillD = `${d} L ${((values.length - 1) * step).toFixed(1)} ${H} L 0 ${H} Z`;
   const cx = (values.length - 1) * step;
   const cy = py(latest);
+
+  const idxFromEvent = e => {
+    const rect = boxRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * W;
+    return Math.max(0, Math.min(values.length - 1, Math.round(x / step)));
+  };
+  const onScrub = e => setScrub(idxFromEvent(e));
+
+  const sv = scrub != null ? values[scrub] : null;
+  const sx = scrub != null ? scrub * step : 0;
+  const sy = scrub != null ? py(sv) : 0;
+  const sPct = scrub != null && first > 0 ? ((sv - first) / first) * 100 : 0;
+  const sDate = scrub != null && !useLive ? history[scrub]?.date : null;
+  // keep the readout pill inside the chart
+  const pillX = Math.max(2, Math.min(W - 96, sx - 47));
+
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
-      <defs>
-        <linearGradient id="pf-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <path d={fillD} fill="url(#pf-grad)" />
-      <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {/* live dot */}
-      <circle cx={cx} cy={cy} r="3.5" fill={color} />
-      <circle cx={cx} cy={cy} r="7"   fill={color} fillOpacity="0.18" />
-      {/* current value label */}
-      <rect x={cx - 38} y={cy - 16} width="46" height="13" rx="3" fill={color} fillOpacity="0.15" />
-      <text x={cx - 15} y={cy - 6} fill={color} fontSize="8.5" fontFamily="monospace" textAnchor="middle">
-        ${latest.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-      </text>
-    </svg>
+    <div ref={boxRef} className="w-full h-full touch-none select-none cursor-crosshair"
+      onPointerDown={onScrub} onPointerMove={e => e.buttons > 0 || e.pointerType === 'touch' ? onScrub(e) : scrub != null && onScrub(e)}
+      onPointerUp={() => setScrub(null)} onPointerLeave={() => setScrub(null)}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+        <defs>
+          <linearGradient id="pf-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor={color} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {/* baseline at session start */}
+        <line x1="0" y1={py(first)} x2={W} y2={py(first)} stroke={color} strokeOpacity="0.25" strokeWidth="1" strokeDasharray="3 4" />
+        <path d={fillD} fill="url(#pf-grad)" />
+        <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+
+        {scrub == null ? (
+          <>
+            <circle cx={cx} cy={cy} r="3.5" fill={color} />
+            <circle cx={cx} cy={cy} r="7"   fill={color} fillOpacity="0.18" />
+            <rect x={cx - 38} y={cy - 16} width="46" height="13" rx="3" fill={color} fillOpacity="0.15" />
+            <text x={cx - 15} y={cy - 6} fill={color} fontSize="8.5" fontFamily="monospace" textAnchor="middle">
+              ${latest.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </text>
+          </>
+        ) : (
+          <>
+            {/* crosshair */}
+            <line x1={sx} y1="0" x2={sx} y2={H} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2 3" />
+            <circle cx={sx} cy={sy} r="4.5" fill={color} stroke="#fff" strokeWidth="1.5" />
+            {/* readout pill */}
+            <rect x={pillX} y="1" width="94" height={sDate ? 26 : 16} rx="4" fill="#0f172a" fillOpacity="0.92" />
+            <text x={pillX + 47} y="12" fill="#fff" fontSize="9" fontWeight="700" fontFamily="monospace" textAnchor="middle">
+              ${sv.toLocaleString(undefined, { maximumFractionDigits: 0 })} <tspan fill={sPct >= 0 ? '#34d399' : '#fb7185'}>{sPct >= 0 ? '+' : ''}{sPct.toFixed(1)}%</tspan>
+            </text>
+            {sDate && (
+              <text x={pillX + 47} y="23" fill="#94a3b8" fontSize="7.5" fontFamily="monospace" textAnchor="middle">{sDate}</text>
+            )}
+          </>
+        )}
+      </svg>
+    </div>
   );
 }
 
