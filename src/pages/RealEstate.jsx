@@ -4,6 +4,10 @@ import { ArrowLeft, X } from 'lucide-react';
 import { CITIES, getCityById, getCityAssets, getAssetById, assetPrice, monthlyRent, cityTrend, currentGameMonth, MIN_DOWN_PCT, MORTGAGE_RATES, monthlyPayment, getCityEvent, getMonthEvents } from '@/lib/realEstateData';
 import { fetchWorldOwnership, ownedCountsByCity, buyProperty, sellProperty, collectRent, pendingRent, settleMyProperties, myRealEstateEquity, propertyMeta, isVacant, rentMult, upgradeCost, upgradeProperty, fillVacancy, MAX_UPGRADE_LEVEL } from '@/lib/realEstateEngine';
 import { getPortfolio } from '@/lib/tradeActions';
+import { useUserProgress } from '@/lib/useUserProgress';
+import { Link } from 'react-router-dom';
+
+const UNLOCK_LESSONS = 3;
 import { getCountryByCode } from '@/lib/countryData';
 import marketSim from '@/lib/marketSim';
 import { toast } from 'sonner';
@@ -389,6 +393,8 @@ function PropertySheet({ asset, rec, ownedCounts, onClose, onChanged, onSell }) 
 
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function RealEstate() {
+  const { progress } = useUserProgress();
+  const lessons = (progress?.completed_lessons ?? []).length;
   const [world, setWorld] = useState({});
   const [cityId, setCityId] = useState(null);
   const [buyAsset, setBuyAsset] = useState(null);
@@ -440,6 +446,22 @@ export default function RealEstate() {
   }
 
   const city = cityId ? getCityById(cityId) : null;
+
+  if (lessons < UNLOCK_LESSONS) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 pb-28 gap-4 text-center">
+        <span className="text-6xl">🔒</span>
+        <h2 className="text-xl font-extrabold text-foreground">Real Estate Locked</h2>
+        <p className="text-sm text-muted-foreground max-w-xs">Complete {UNLOCK_LESSONS} lessons to unlock the global property market.</p>
+        <div className="bg-muted rounded-2xl px-6 py-3">
+          <p className="font-extrabold text-foreground">{lessons} / {UNLOCK_LESSONS} lessons done</p>
+        </div>
+        <Link to="/" className="mt-1 bg-primary text-primary-foreground font-extrabold px-6 py-3 rounded-2xl active:scale-95">
+          Back to Learn
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background pb-28 max-w-lg mx-auto">

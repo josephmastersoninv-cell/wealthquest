@@ -21,7 +21,7 @@ import { pushPortfolio, flushNow } from '@/lib/cloudSync';
 const PORTFOLIO_KEY   = 'wealthquest_portfolio';
 const WATCHLIST_KEY   = 'wealthquest_watchlist';
 const STARTING_CASH   = 10000;
-const UNLOCK_LESSONS  = 5;
+const UNLOCK_LESSONS  = 3;
 const TICK_INTERVAL   = 8000; // ms between live price ticks
 const SPEED_MULT      = 5;    // 5× amplified volatility
 
