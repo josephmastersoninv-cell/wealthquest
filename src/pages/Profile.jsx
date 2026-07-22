@@ -6,6 +6,7 @@ import { useUserProgress } from '@/lib/useUserProgress';
 import { useIsPro } from '@/lib/useIsPro';
 import { useTheme } from '@/lib/themeContext';
 import { getLevelForXp, getXpProgress, LEVELS } from '@/lib/levelData';
+import { getNetWorth } from '@/lib/tradeActions';
 import { ACHIEVEMENTS, RARITY_COLOR, RARITY_LABEL } from '@/lib/achievementData';
 import { DAILY_GOALS, getGoalConfig, setDailyGoal, getDailyGoal, hasStreakFreeze, setStreakFreeze, STREAK_FREEZE_COST, getTodayXp } from '@/lib/dailyGoal';
 import { TOTAL_LESSONS } from '@/lib/unitData';
@@ -21,14 +22,15 @@ const AVATAR_KEY = 'wealthquest_avatar';
 
 // ── League config (mirrors League.jsx) ───────────────────────────────────────
 const LEAGUES = [
-  { name: 'Bronze',   minXp: 0,    icon: '🥉', color: 'from-amber-800 to-amber-500',   text: 'text-amber-400'   },
-  { name: 'Silver',   minXp: 300,  icon: '🥈', color: 'from-slate-600 to-slate-300',   text: 'text-slate-300'   },
-  { name: 'Gold',     minXp: 800,  icon: '🥇', color: 'from-yellow-600 to-amber-300',  text: 'text-yellow-300'  },
-  { name: 'Platinum', minXp: 1500, icon: '💠', color: 'from-cyan-700 to-teal-300',     text: 'text-cyan-300'    },
-  { name: 'Diamond',  minXp: 3000, icon: '💎', color: 'from-violet-700 to-fuchsia-400',text: 'text-violet-300'  },
-  { name: 'Legend',   minXp: 6000, icon: '👑', color: 'from-rose-600 to-amber-300',    text: 'text-amber-200'   },
+  { name: 'Bronze',   minXp: 0,       icon: '🥉', color: 'from-amber-800 to-amber-500',   text: 'text-amber-400'   },
+  { name: 'Silver',   minXp: 12500,   icon: '🥈', color: 'from-slate-600 to-slate-300',   text: 'text-slate-300'   },
+  { name: 'Gold',     minXp: 20000,   icon: '🥇', color: 'from-yellow-600 to-amber-300',  text: 'text-yellow-300'  },
+  { name: 'Platinum', minXp: 50000,   icon: '💠', color: 'from-cyan-700 to-teal-300',     text: 'text-cyan-300'    },
+  { name: 'Diamond',  minXp: 150000,  icon: '💎', color: 'from-violet-700 to-fuchsia-400',text: 'text-violet-300'  },
+  { name: 'Legend',   minXp: 500000,  icon: '👑', color: 'from-rose-600 to-amber-300',    text: 'text-amber-200'   },
 ];
-function getLeague(xp) { for (let i = LEAGUES.length - 1; i >= 0; i--) { if (xp >= LEAGUES[i].minXp) return LEAGUES[i]; } return LEAGUES[0]; }
+const fmtMoney = n => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(1)}k` : `$${Math.round(n)}`;
+function getLeague(netWorth) { for (let i = LEAGUES.length - 1; i >= 0; i--) { if (netWorth >= LEAGUES[i].minXp) return LEAGUES[i]; } return LEAGUES[0]; }
 
 // Rarity glow configs
 const RARITY_GLOW = {
@@ -110,7 +112,8 @@ export default function Profile() {
   const goalConfig    = getGoalConfig();
 
   const { current: level, pct: xpPct, xpInLevel, xpNeeded } = getXpProgress(xp);
-  const league        = getLeague(xp);
+  const netWorth      = getNetWorth();
+  const league        = getLeague(netWorth);
   const multiplierLabel = getMultiplierLabel(streak);
   const myCountryData = myCountry ? getCountryByCode(myCountry) : null;
 
@@ -212,14 +215,8 @@ export default function Profile() {
                 {player?.name && (
                   <p className="text-white font-extrabold text-base leading-tight">{player.name}</p>
                 )}
-                <p className="text-white/70 text-sm font-bold">{level.emoji} {level.title}</p>
-                <p className="text-white/50 text-xs">Level {level.level}</p>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <div className="w-28 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-white rounded-full" style={{ width: `${xpPct}%` }} />
-                  </div>
-                  <span className="text-white/70 text-xs">{xpInLevel}/{xpNeeded}</span>
-                </div>
+                <p className="text-white/70 text-sm font-bold">💰 Net worth {fmtMoney(netWorth)}</p>
+                <p className="text-white/50 text-xs">{league.icon} {league.name} League</p>
               </div>
             </div>
             <button onClick={toggleTheme} className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white active:scale-95">
@@ -246,7 +243,7 @@ export default function Profile() {
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-2 mb-4">
             {[
-              { emoji: '⚡', val: xp.toLocaleString(), label: 'XP' },
+              { emoji: '💰', val: fmtMoney(netWorth), label: 'Net worth' },
               { emoji: '💰', val: coins.toLocaleString(), label: 'Coins' },
               { emoji: '🔥', val: `${streak}d${multiplierLabel ? ` ${multiplierLabel}` : ''}`, label: 'Streak' },
             ].map(s => (
@@ -289,7 +286,7 @@ export default function Profile() {
             <p className="text-white font-extrabold text-sm">{league.name} League</p>
             <p className="text-white/70 text-xs">
               {LEAGUES.findIndex(l => l.name === league.name) < LEAGUES.length - 1
-                ? `${(LEAGUES[LEAGUES.findIndex(l => l.name === league.name) + 1].minXp - xp).toLocaleString()} XP to ${LEAGUES[LEAGUES.findIndex(l => l.name === league.name) + 1].name}`
+                ? `${fmtMoney(LEAGUES[LEAGUES.findIndex(l => l.name === league.name) + 1].minXp - netWorth)} to ${LEAGUES[LEAGUES.findIndex(l => l.name === league.name) + 1].name}`
                 : 'Max league reached 🏆'}
             </p>
           </div>
@@ -361,24 +358,25 @@ export default function Profile() {
         </Section>
 
         {/* ── Level path ── */}
-        <Section id="levels" title="🏆 Level Progress">
+        <Section id="levels" title="🏆 Wealth Tiers">
           <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-            {LEVELS.map(lvl => {
-              const done   = xp >= lvl.maxXp;
-              const active = level.level === lvl.level;
+            {LEAGUES.map((tier, i) => {
+              const next = LEAGUES[i + 1];
+              const done = next ? netWorth >= next.minXp : netWorth >= tier.minXp;
+              const active = league.name === tier.name;
+              const prog = active && next ? Math.min(100, ((netWorth - tier.minXp) / (next.minXp - tier.minXp)) * 100) : done ? 100 : 0;
               return (
-                <div key={lvl.level} className={`flex items-center gap-3 ${!done && !active ? 'opacity-40' : ''}`}>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-extrabold shrink-0 ${
-                    done ? 'bg-emerald-500 text-white' : active ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'
-                  }`}>{done ? '✓' : lvl.emoji ?? lvl.level}</div>
+                <div key={tier.name} className={`flex items-center gap-3 ${!done && !active ? 'opacity-40' : ''}`}>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shrink-0 ${
+                    done ? 'bg-emerald-500' : active ? 'bg-primary' : 'bg-muted'
+                  }`}>{tier.icon}</div>
                   <div className="flex-1">
-                    <p className="text-sm font-bold text-foreground">{lvl.title}</p>
+                    <p className="text-sm font-bold text-foreground">{tier.name}</p>
                     <div className="h-1.5 bg-muted rounded-full mt-1 overflow-hidden">
-                      <div className="h-full bg-primary rounded-full transition-all"
-                        style={{ width: active ? `${xpPct}%` : done ? '100%' : '0%' }} />
+                      <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${prog}%` }} />
                     </div>
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0">{lvl.minXp.toLocaleString()} XP</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{fmtMoney(tier.minXp)}</span>
                 </div>
               );
             })}
@@ -390,7 +388,7 @@ export default function Profile() {
           <div className="bg-card border border-border rounded-2xl p-4">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-bold text-muted-foreground">Today</p>
-              <span className="text-xs font-extrabold text-primary">{todayXp} / {goalConfig.xp} XP</span>
+              <span className="text-xs font-extrabold text-primary">{todayXp} / {goalConfig.xp} pts</span>
             </div>
             <div className="h-2.5 bg-muted rounded-full overflow-hidden mb-4">
               <motion.div className="h-full bg-primary rounded-full"
@@ -406,7 +404,7 @@ export default function Profile() {
                   <span className="text-lg">{g.emoji}</span>
                   <div>
                     <p className="text-xs font-extrabold text-foreground">{g.label}</p>
-                    <p className="text-[10px] text-muted-foreground">{g.xp} XP</p>
+                    <p className="text-[10px] text-muted-foreground">{g.xp} pts</p>
                   </div>
                   {goalId === g.id && <Check className="w-3.5 h-3.5 text-primary ml-auto shrink-0" />}
                 </button>

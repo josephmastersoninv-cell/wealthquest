@@ -407,8 +407,7 @@ const MODE_TIPS = {
 };
 
 // ─── TradingView-style full-screen Chart Modal ────────────────────────────────
-const TF_LIST  = ['1M', '5M', '15M', '1H', '4H', '1D'];
-const TF_TICKS = { '1M': 8, '5M': 37, '15M': 112, '1H': 450, '4H': 1800, '1D': 10800 };
+const TF_LIST  = ['1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL'];
 
 const CHART_STYLE = { buy: 'solid', sell: 'hollow', short: 'inverted', cover: 'inverted' };
 
@@ -446,8 +445,10 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, m
   // Short P&L on open position
   const shortPnl = shortPos ? (shortPos.entryPrice - price) * shortPos.shares : 0;
 
+  // Live price tracks the right edge of the chart (the newest candle)
   useEffect(() => {
     setCandles(prev => {
+      if (!prev.length) return prev;
       const upd  = [...prev];
       const last = { ...upd[upd.length - 1], c: price };
       last.h = Math.max(last.h, price);
@@ -455,14 +456,6 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, m
       upd[upd.length - 1] = last;
       return upd;
     });
-    tickCount.current++;
-    if (tickCount.current >= (TF_TICKS[tf] ?? 8)) {
-      tickCount.current = 0;
-      setCandles(prev => [
-        ...prev.slice(-69),
-        { o: price, h: price, l: price, c: price, v: 300000, t: Date.now() },
-      ]);
-    }
   }, [price]);
 
   function showLearn(topic) {
@@ -558,13 +551,18 @@ function ChartModal({ asset, price, onClose, onTrade, cash, holding, shortPos, m
       {/* ── Timeframe selector ── */}
       <div className="flex items-center gap-0.5 px-3 py-1.5"
            style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-        {TF_LIST.map(t => (
-          <button key={t} onClick={() => switchTf(t)}
-            className="px-2.5 py-1 rounded text-xs font-extrabold transition-all active:scale-95"
-            style={{ background: tf === t ? 'rgba(255,255,255,0.13)' : 'transparent', color: tf === t ? 'white' : 'rgba(255,255,255,0.28)' }}>
-            {t}
-          </button>
-        ))}
+        <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
+          {TF_LIST.map(t => (
+            <button key={t} onClick={() => switchTf(t)}
+              className="px-2 py-1 rounded text-[11px] font-extrabold transition-all active:scale-95 shrink-0"
+              style={{ background: tf === t ? 'rgba(255,255,255,0.13)' : 'transparent', color: tf === t ? 'white' : 'rgba(255,255,255,0.28)' }}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <span className="ml-2 font-extrabold shrink-0" style={{ fontSize: 11, color: positive ? '#34d399' : '#fb7185' }}>
+          {positive ? '+' : ''}{sessionPct.toFixed(2)}% · {tf}
+        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50" />

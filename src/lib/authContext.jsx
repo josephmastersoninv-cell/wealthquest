@@ -51,10 +51,11 @@ export function AuthProvider({ children }) {
   }, [fetchPlayer]);
 
   useEffect(() => {
-    if (!isConfigured || !supabase) { setLoading(false); return; }
+    if (!isConfigured || !supabase) { window.__wqRestoreDone = true; setLoading(false); return; }
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
+      if (!session?.user) window.__wqRestoreDone = true; // nothing to restore
       if (session?.user) {
         // Restore full progress from cloud into localStorage on every page load
         await pullAndRestore(session.user.id);

@@ -605,29 +605,81 @@ export const RECESSION_NEWS = {
 };
 
 // ── OHLC candle history ending at currentPrice (for TradingView-style chart) ──
-export function generateCandles(assetId, currentPrice, tf = '1M', count = 70) {
-  const TF_MIN = { '1M': 1, '5M': 5, '15M': 15, '1H': 60, '4H': 240, '1D': 1440 };
-  const tfMin = TF_MIN[tf] ?? 1;
-  const baseVol = ASSET_VOL[assetId] ?? 0.004;
-  const candleVol = baseVol * 5 * Math.sqrt(Math.max(tfMin, 1));
+// Real investing-app timeframes. Each spans a real window and the history is
+// modelled on the asset's ACTUAL trajectory: prices grow from the real IPO
+// price toward today's live price along a crash-aware curve (2008, COVID for
+// stocks; crypto winters for coins), so zooming out shows the true long-term
+// story (NVDA's melt-up, BTC's cycles) and zooming in shows recent action.
+export const CHART_TIMEFRAMES = ['1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL'];
 
-  // Seed per asset+tf+day — chart shape is stable within a trading day
-  let seed = [...(assetId + tf)].reduce((a, c) => a + c.charCodeAt(0), 0)
-           + Math.floor(Date.now() / 86400000);
+const TF_CONFIG = {
+  '1D':  { days: 1,   count: 24 },
+  '1W':  { days: 7,   count: 28 },
+  '1M':  { days: 30,  count: 30 },
+  '6M':  { days: 182, count: 26 },
+  '1Y':  { days: 365, count: 40 },
+  'YTD': { days: null, count: 40 },
+  'ALL': { days: null, count: 60 },
+};
+
+// Modelled price at life-fraction t (0 = IPO, 1 = now), incl. historic crashes.
+function trajectoryAt(assetId, currentPrice, ipoPrice, isCrypto, t, rng) {
+  const trend = ipoPrice * Math.pow(Math.max(currentPrice / ipoPrice, 1.001), t);
+  let dip = 1;
+  if (isCrypto) {
+    if (t > 0.28 && t < 0.40) dip = 0.35 + rng() * 0.15;   // crypto winter '18
+    if (t > 0.65 && t < 0.76) dip = 0.38 + rng() * 0.15;   // '22 crash
+  } else {
+    if (t > 0.32 && t < 0.44) dip = 0.60 + rng() * 0.15;   // GFC '08
+    if (t > 0.78 && t < 0.86) dip = 0.68 + rng() * 0.12;   // COVID '20
+  }
+  return Math.max(trend * dip, ipoPrice * 0.05);
+}
+
+export function generateCandles(assetId, currentPrice, tf = '1M') {
+  const cfg = TF_CONFIG[tf] ?? TF_CONFIG['1M'];
+  const ipo = IPO_DATA[assetId];
+  const asset = ASSETS.find(a => a.id === assetId);
+  const isCrypto = asset?.type === 'crypto';
+  const ipoPrice = ipo?.ipoPrice && ipo.ipoPrice > 0 ? ipo.ipoPrice : currentPrice * 0.15;
+  const ipoTime = ipo?.date ? new Date(ipo.date).getTime() : Date.now() - 3650 * 86400000;
+  const ageDays = Math.max(1, (Date.now() - ipoTime) / 86400000);
+
+  // Span for this timeframe → start fraction of the asset's life
+  let spanDays;
+  if (tf === 'ALL') spanDays = ageDays;
+  else if (tf === 'YTD') spanDays = Math.max(1, (Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / 86400000);
+  else spanDays = Math.min(cfg.days, ageDays);
+  const tStart = Math.max(0, 1 - spanDays / ageDays);
+
+  const count = cfg.count;
+  // Deterministic per asset+timeframe (stable within a day)
+  let seed = [...(assetId + tf)].reduce((a, c) => a + c.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
   const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xFFFFFFFF; };
 
-  const candles = [];
-  let closePrice = currentPrice;
+  // Backbone: modelled close for each candle from tStart → now
+  const closes = [];
+  for (let i = 0; i < count; i++) {
+    const t = tStart + (1 - tStart) * (i / (count - 1));
+    const noiseR = () => rng();
+    closes.push(trajectoryAt(assetId, currentPrice, ipoPrice, isCrypto, t, noiseR));
+  }
+  closes[count - 1] = currentPrice; // pin the live price
 
-  for (let i = count - 1; i >= 0; i--) {
-    const bodyMove = (rng() - 0.5) * candleVol;
-    const openPrice = closePrice / (1 + bodyMove);
-    const high = Math.max(openPrice, closePrice) * (1 + rng() * candleVol * 0.4);
-    const low  = Math.min(openPrice, closePrice) * (1 - rng() * candleVol * 0.4);
-    const vol  = (200000 + rng() * 1500000) * (1 + Math.abs(bodyMove) / (candleVol || 0.001));
-    candles.unshift({ o: openPrice, h: high, l: low, c: closePrice, v: vol,
-                      t: Date.now() - i * tfMin * 60000 });
-    closePrice = openPrice;
+  // Volatility scaled by how much real time each candle covers
+  const perCandleDays = spanDays / count;
+  const baseVol = ASSET_VOL[assetId] ?? 0.004;
+  const wickVol = Math.min(0.12, baseVol * (isCrypto ? 55 : 30) * Math.sqrt(Math.max(perCandleDays, 0.04)));
+
+  const candles = [];
+  const spanMs = spanDays * 86400000;
+  for (let i = 0; i < count; i++) {
+    const c = closes[i];
+    const o = i === 0 ? c / (1 + (rng() - 0.5) * wickVol) : closes[i - 1];
+    const hi = Math.max(o, c) * (1 + rng() * wickVol * 0.5);
+    const lo = Math.min(o, c) * (1 - rng() * wickVol * 0.5);
+    const vol = (200000 + rng() * 1500000) * (1 + Math.abs(c - o) / (Math.abs(o) * wickVol || 1));
+    candles.push({ o, h: hi, l: lo, c, v: vol, t: Date.now() - spanMs * (1 - i / (count - 1)) });
   }
   return candles;
 }

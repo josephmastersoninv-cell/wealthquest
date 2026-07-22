@@ -13,6 +13,8 @@ import LevelUpModal from '@/components/LevelUpModal';
 import DailyGoalRing from '@/components/DailyGoalRing';
 import DailyMissions from '@/components/DailyMissions';
 import XpBar from '@/components/XpBar';
+import { getNetWorth } from '@/lib/tradeActions';
+const fmtMoney = n => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(1)}k` : `$${Math.round(n)}`;
 import NewsFeed from '@/components/NewsFeed';
 import TermOfTheDay from '@/components/TermOfTheDay';
 import WeeklyRecap from '@/components/WeeklyRecap';
@@ -131,6 +133,7 @@ export default function Learn() {
   const lessonStars = progress?.lesson_stars ?? {};
   const xp = progress?.xp ?? 0;
   const { current: level, pct } = getXpProgress(xp);
+  const netWorth = getNetWorth();
   const streak = progress?.streak_days ?? 0;
   const hearts = progress?.hearts ?? 5;
   const dailyDone = progress?.daily_challenge_date === getTodayKey();
@@ -158,14 +161,10 @@ export default function Learn() {
       {/* Sticky header */}
       <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border z-30 px-4 py-3 max-w-lg mx-auto">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={`text-xs font-extrabold px-2.5 py-1 rounded-lg ${level.bg} text-white`}>
-              Lv {level.level}
-            </div>
-            <div className="relative w-28 h-2.5 bg-muted rounded-full overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-            </div>
-          </div>
+          <Link to="/portfolio" className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-2.5 py-1 active:scale-95 transition-all">
+            <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-500/70">Net worth</span>
+            <span className="text-sm font-black text-emerald-500">{fmtMoney(netWorth)}</span>
+          </Link>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1 text-sm font-bold text-amber-500">
               <Flame className="w-4 h-4" />{streak}
@@ -174,9 +173,6 @@ export default function Learn() {
               {Array.from({ length: 5 }).map((_, i) => (
                 <span key={i} className={`text-sm ${i < hearts ? 'text-rose-500' : 'text-muted-foreground/20'}`}>♥</span>
               ))}
-            </div>
-            <div className="flex items-center gap-1 text-sm font-bold text-primary">
-              <Zap className="w-3.5 h-3.5" />{xp}
             </div>
             <DailyGoalRing size={36} />
           </div>
@@ -199,7 +195,9 @@ export default function Learn() {
               <span className="text-xs font-bold text-primary">{Math.round(completedCount / TOTAL_LESSONS * 100)}%</span>
             </div>
           </div>
-          <XpBar xp={xp} showLabel={false} compact />
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${Math.round(completedCount / TOTAL_LESSONS * 100)}%` }} />
+          </div>
         </div>
 
         {/* Streak at risk — only if urgent */}
@@ -413,7 +411,7 @@ export default function Learn() {
                         <p className="text-white/60 text-[10px] font-extrabold uppercase tracking-widest">⚡ Chapter {exam.chapter} Boss</p>
                         <p className="text-white font-black text-base leading-tight">{exam.title}</p>
                         <p className="text-white/60 text-xs mt-0.5">
-                          {bestScore >= 70 ? `Best: ${bestScore}% · ` : ''}{exam.xpReward.toLocaleString()} XP · {exam.coinsReward.toLocaleString()} Coins
+                          {bestScore >= 70 ? `Best: ${bestScore}% · ` : ''}Win ${exam.coinsReward.toLocaleString()} cash
                         </p>
                       </div>
                       <div className="shrink-0">
@@ -444,7 +442,7 @@ export default function Learn() {
                   <span className="text-xl">🔥</span>
                   <div>
                     <p className="text-sm font-extrabold text-amber-400">Daily Challenge</p>
-                    <p className="text-xs text-muted-foreground">5 questions · +50 XP · +$20</p>
+                    <p className="text-xs text-muted-foreground">5 questions · win $50 cash</p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-amber-500 shrink-0" />
@@ -519,7 +517,7 @@ export default function Learn() {
               <div className="flex-1">
                 <p className={`font-extrabold ${allDone ? 'text-white' : 'text-muted-foreground'}`}>Final Exam</p>
                 <p className={`text-xs ${allDone ? 'text-white/80' : 'text-muted-foreground'}`}>
-                  {allDone ? 'Prove your mastery — earn 500 XP!' : `Complete all ${TOTAL_LESSONS} lessons to unlock`}
+                  {allDone ? 'Prove your mastery — win a $500 cash bonus!' : `Complete all ${TOTAL_LESSONS} lessons to unlock`}
                 </p>
               </div>
               {allDone && (

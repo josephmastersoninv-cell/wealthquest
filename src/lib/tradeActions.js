@@ -34,6 +34,19 @@ export function getLivePriceById(assetId) {
   return marketSim.prices[assetId]?.price ?? null;
 }
 
+// Net worth = cash + live value of stock holdings + real-estate equity.
+// This is the game's single score — "how rich are you".
+export function getNetWorth() {
+  const p = getPortfolio();
+  const cash = p.cash ?? 0;
+  const invested = (p.holdings ?? []).reduce((sum, h) => {
+    const price = getLivePriceById(h.assetId) ?? h.avgCost ?? 0;
+    return sum + price * h.shares;
+  }, 0);
+  const reEquity = Number(localStorage.getItem('wq_re_equity') ?? 0);
+  return Math.round(cash + invested + reEquity);
+}
+
 // Crypto trades 24/7; stocks & ETFs only during NYSE hours
 export function canTradeAsset(assetId) {
   const a = ASSETS.find(x => x.id === assetId);

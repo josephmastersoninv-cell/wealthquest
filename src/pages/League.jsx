@@ -8,6 +8,7 @@ import { getDailyAdvice } from '@/lib/advisorData';
 import { fetchXpLeaderboard, fetchCountryTotals, fetchPlayersByCountry, subscribeToLeaderboard, getMyPlayerId, getMyPlayerData } from '@/lib/playerSync';
 import { useAuth } from '@/lib/authContext';
 import { checkWeeklyReward, claimWeeklyReward, MIN_COMPETITIVE } from '@/lib/leagueRewards';
+import { getNetWorth } from '@/lib/tradeActions';
 import { fetchMyDuels, challengePlayer, respondToDuel, duelGains, settleDuelIfDue, DUEL_PRIZE, DUEL_DAYS } from '@/lib/duelData';
 import { sounds } from '@/lib/sound';
 import { haptics } from '@/lib/haptics';
@@ -33,17 +34,18 @@ function getTimeUntilReset() {
   return d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
 }
 
+// Leagues by NET WORTH — everyone starts at $10k and climbs by getting rich
 const LEAGUES = [
-  { name: 'Bronze',   minXp: 0,    icon: '🥉', gradient: 'from-amber-800 via-amber-600 to-amber-400',       bar: 'bg-amber-400',   accent: 'text-amber-300',   accentBg: 'bg-amber-500/15',   ring: 'ring-amber-500/40'   },
-  { name: 'Silver',   minXp: 300,  icon: '🥈', gradient: 'from-slate-600 via-slate-500 to-slate-300',       bar: 'bg-slate-300',   accent: 'text-slate-200',   accentBg: 'bg-slate-400/15',   ring: 'ring-slate-400/40'   },
-  { name: 'Gold',     minXp: 800,  icon: '🥇', gradient: 'from-yellow-700 via-yellow-500 to-amber-300',     bar: 'bg-yellow-300',  accent: 'text-yellow-200',  accentBg: 'bg-yellow-400/15',  ring: 'ring-yellow-400/40'  },
-  { name: 'Platinum', minXp: 1500, icon: '💠', gradient: 'from-cyan-800 via-cyan-600 to-teal-300',          bar: 'bg-cyan-300',    accent: 'text-cyan-200',    accentBg: 'bg-cyan-400/15',    ring: 'ring-cyan-400/40'    },
-  { name: 'Diamond',  minXp: 3000, icon: '💎', gradient: 'from-violet-800 via-violet-600 to-fuchsia-400',   bar: 'bg-violet-300',  accent: 'text-violet-200',  accentBg: 'bg-violet-400/15',  ring: 'ring-violet-400/40'  },
-  { name: 'Legend',   minXp: 6000, icon: '👑', gradient: 'from-rose-700 via-orange-500 to-amber-300',       bar: 'bg-amber-300',   accent: 'text-amber-200',   accentBg: 'bg-amber-500/15',   ring: 'ring-amber-400/40'   },
+  { name: 'Bronze',   minXp: 0,       icon: '🥉', gradient: 'from-amber-800 via-amber-600 to-amber-400',       bar: 'bg-amber-400',   accent: 'text-amber-300',   accentBg: 'bg-amber-500/15',   ring: 'ring-amber-500/40'   },
+  { name: 'Silver',   minXp: 12500,   icon: '🥈', gradient: 'from-slate-600 via-slate-500 to-slate-300',       bar: 'bg-slate-300',   accent: 'text-slate-200',   accentBg: 'bg-slate-400/15',   ring: 'ring-slate-400/40'   },
+  { name: 'Gold',     minXp: 20000,   icon: '🥇', gradient: 'from-yellow-700 via-yellow-500 to-amber-300',     bar: 'bg-yellow-300',  accent: 'text-yellow-200',  accentBg: 'bg-yellow-400/15',  ring: 'ring-yellow-400/40'  },
+  { name: 'Platinum', minXp: 50000,   icon: '💠', gradient: 'from-cyan-800 via-cyan-600 to-teal-300',          bar: 'bg-cyan-300',    accent: 'text-cyan-200',    accentBg: 'bg-cyan-400/15',    ring: 'ring-cyan-400/40'    },
+  { name: 'Diamond',  minXp: 150000,  icon: '💎', gradient: 'from-violet-800 via-violet-600 to-fuchsia-400',   bar: 'bg-violet-300',  accent: 'text-violet-200',  accentBg: 'bg-violet-400/15',  ring: 'ring-violet-400/40'  },
+  { name: 'Legend',   minXp: 500000,  icon: '👑', gradient: 'from-rose-700 via-orange-500 to-amber-300',       bar: 'bg-amber-300',   accent: 'text-amber-200',   accentBg: 'bg-amber-500/15',   ring: 'ring-amber-400/40'   },
 ];
 
-function getCurrentLeague(xp) {
-  for (let i = LEAGUES.length - 1; i >= 0; i--) { if (xp >= LEAGUES[i].minXp) return LEAGUES[i]; }
+function getCurrentLeague(netWorth) {
+  for (let i = LEAGUES.length - 1; i >= 0; i--) { if (netWorth >= LEAGUES[i].minXp) return LEAGUES[i]; }
   return LEAGUES[0];
 }
 
@@ -247,7 +249,7 @@ function RecruitCard({ player, inSquad, squadFull, onRecruit, onDismiss, coins }
 export default function League() {
   const { progress, updateProgress } = useUserProgress();
   const { player: authPlayer, isAuthenticated } = useAuth();
-  const myXp        = progress?.xp ?? 0;
+  const myNetWorth  = getNetWorth();
   const myCoins     = progress?.coins ?? 0;
   const myPortfolio = (() => {
     try {
@@ -259,7 +261,7 @@ export default function League() {
       return cash + invested + bondVal;
     } catch { return progress?.portfolio_balance ?? 10000; }
   })();
-  const league      = getCurrentLeague(myXp);
+  const league      = getCurrentLeague(myNetWorth);
 
   const [tab, setTab]         = useState('news');
   const [timeLeft, setTimeLeft] = useState(getTimeUntilReset);
@@ -301,7 +303,7 @@ export default function League() {
     const ghosts = Array.from({ length: 14 }, (_, i) => {
       const nameIdx = Math.floor(rand() * GHOST_NAMES.length);
       const countryIdx = Math.floor(rand() * COUNTRIES.length);
-      const baseXp = Math.max(myXp, 80);
+      const baseXp = Math.max(myNetWorth, 10000);
       const variance = Math.floor(rand() * baseXp * 0.9) - baseXp * 0.35;
       const country = COUNTRIES[countryIdx];
       return { id: `ghost-${i}`, name: GHOST_NAMES[nameIdx % GHOST_NAMES.length], flag: country.flag, countryName: country.name, xp: Math.max(10, Math.round(baseXp + variance)), isGhost: true };
@@ -309,7 +311,7 @@ export default function League() {
     const myCountryData = myCountry ? getCountryByCode(myCountry) : null;
     const myName = authPlayer?.name ?? myPlayerData?.name ?? 'You';
     const myAvatar = authPlayer?.avatar ?? myPlayerData?.avatar;
-    const me = { id: 'me', name: myName, avatar: myAvatar, flag: myCountryData?.flag ?? '⭐', xp: myXp, isMe: true };
+    const me = { id: 'me', name: myName, avatar: myAvatar, flag: myCountryData?.flag ?? '⭐', xp: myNetWorth, isMe: true };
 
     if (realPlayers.length) {
       const myAuthId = authPlayer?.id ?? myPlayerId;
@@ -317,13 +319,13 @@ export default function League() {
         .filter(p => p.id !== myAuthId)
         .map(p => {
           const c = getCountryByCode(p.country_code);
-          return { id: p.id, name: p.name, avatar: p.avatar, flag: c?.flag ?? '🌍', xp: p.xp ?? 0, real: true };
+          return { id: p.id, name: p.name, avatar: p.avatar, flag: c?.flag ?? '🌍', xp: Number(p.portfolio_value ?? 10000), real: true };
         });
       return [...others, me].sort((a, b) => b.xp - a.xp);
     }
 
     return [me];
-  }, [myXp, league.name, myCountry, realPlayers, myPlayerId, myPlayerData]);
+  }, [myNetWorth, league.name, myCountry, realPlayers, myPlayerId, myPlayerData]);
 
   const myRank = leaderboard.findIndex(p => p.isMe) + 1;
 
@@ -350,8 +352,8 @@ export default function League() {
   const PROMO = 3;
   const DANGER_START = leaderboard.length - 3;
   const promoXp = leaderboard[PROMO - 1]?.xp ?? 0;
-  const xpToPromo = Math.max(0, promoXp - myXp + 1);
-  const promoPct = Math.min(100, myRank <= PROMO ? 100 : (myXp / promoXp) * 100);
+  const xpToPromo = Math.max(0, promoXp - myNetWorth + 1);
+  const promoPct = Math.min(100, myRank <= PROMO ? 100 : (myNetWorth / promoXp) * 100);
 
   // ── Country leaderboard ───────────────────────────────────────────────────
   const countryBoard = useMemo(() => {
@@ -446,7 +448,7 @@ export default function League() {
               <div>
                 <p className="text-white/60 text-xs font-bold uppercase tracking-widest">Your League</p>
                 <h1 className="text-2xl font-extrabold text-white">{league.name}</h1>
-                <p className={`text-sm font-bold ${league.accent}`}>Rank #{myRank} · {myXp} XP</p>
+                <p className={`text-sm font-bold ${league.accent}`}>Rank #{myRank} · {fmtValue(myNetWorth)} net worth</p>
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -474,8 +476,8 @@ export default function League() {
           {myRank > PROMO ? (
             <div>
               <div className="flex justify-between text-xs font-bold mb-1.5">
-                <span className="text-white/70">XP to promotion zone</span>
-                <span className="text-white">{xpToPromo} XP needed</span>
+                <span className="text-white/70">To promotion zone</span>
+                <span className="text-white">{fmtValue(xpToPromo)} more net worth</span>
               </div>
               <div className="h-2.5 bg-black/20 rounded-full overflow-hidden">
                 <div className={`h-full ${league.bar} rounded-full transition-all duration-700`} style={{ width: `${promoPct}%` }} />
@@ -501,7 +503,7 @@ export default function League() {
               <span className="text-xl">😤</span>
               <div className="flex-1">
                 <p className="text-sm font-extrabold text-rose-400">You dropped to #{myRank}!</p>
-                <p className="text-xs text-muted-foreground">Someone just passed you. Fight back — earn XP now.</p>
+                <p className="text-xs text-muted-foreground">Someone just passed you. Grow your net worth to climb back.</p>
               </div>
               <button onClick={() => { localStorage.setItem(prevRankKey, String(myRank)); }}
                 className="text-xs font-bold text-muted-foreground">✕</button>
@@ -557,7 +559,7 @@ export default function League() {
                         {player.isMe ? 'You' : player.name.slice(0, 10)}
                       </p>
                       <div className="flex items-center gap-0.5 text-xs font-bold text-primary mb-1 mt-0.5">
-                        <Zap className="w-3 h-3" />{player.xp}
+                        {fmtValue(player.xp)}
                       </div>
                       <div className={`w-full ${podiumH[podiumIdx]} rounded-t-xl ${rank === 1 ? `bg-gradient-to-b ${league.gradient} opacity-80` : 'bg-muted border border-border'}`} />
                     </div>
@@ -611,7 +613,7 @@ export default function League() {
                       {player.avatar && <span className="text-[10px] text-muted-foreground">{player.flag}</span>}
                     </div>
                     <div className={`flex items-center gap-1 text-sm font-extrabold ${isMe ? 'text-primary' : 'text-muted-foreground'}`}>
-                      <Zap className="w-3.5 h-3.5" />{player.xp}
+                      {fmtValue(player.xp)}
                     </div>
                     {isPromo && <TrendingUp className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                     {isDanger && <TrendingDown className="w-3.5 h-3.5 text-rose-500 shrink-0" />}
@@ -619,7 +621,7 @@ export default function League() {
                 );
               })}
             </div>
-            <p className="text-center text-xs text-muted-foreground mt-5 mb-2 px-4">Earn XP to climb the leaderboard</p>
+            <p className="text-center text-xs text-muted-foreground mt-5 mb-2 px-4">Grow your net worth to climb the leaderboard</p>
           </motion.div>
         )}
 
@@ -752,7 +754,7 @@ export default function League() {
                 <div className="border-2 border-dashed border-border rounded-xl py-5 text-center mb-3">
                   <p className="text-2xl mb-1">👥</p>
                   <p className="text-xs text-muted-foreground font-bold">No squad members yet</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Recruit investors below to earn passive XP daily</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Recruit investors below for daily market advice</p>
                 </div>
               )}
 
@@ -811,9 +813,9 @@ export default function League() {
             <div className="mt-4 bg-muted/60 border border-border rounded-2xl p-4 mb-2">
               <p className="text-xs font-extrabold text-foreground mb-2">💡 How Activity Score works</p>
               <div className="space-y-1.5 text-xs text-muted-foreground">
-                <p>• Each squad member has an <span className="text-foreground font-bold">Activity Score</span> — the passive XP they generate for you per day.</p>
+                <p>• Each squad member sends daily market advice — their win rate is how often their call is right.</p>
                 <p>• Higher-tier investors (Trader → Mogul) have higher scores and cost more coins to recruit.</p>
-                <p>• Claim your daily XP here. The pool refreshes every Monday with new recruits.</p>
+                <p>• The recruit pool refreshes every Monday with new investors.</p>
               </div>
             </div>
           </motion.div>
@@ -845,7 +847,7 @@ export default function League() {
                   <div>
                     <p className="font-extrabold text-foreground">{selectedCountry.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {countryPlayersLoading ? 'Loading…' : `${countryPlayers.length} player${countryPlayers.length !== 1 ? 's' : ''} · ranked by XP`}
+                      {countryPlayersLoading ? 'Loading…' : `${countryPlayers.length} player${countryPlayers.length !== 1 ? 's' : ''} · ranked by net worth`}
                     </p>
                   </div>
                 </div>

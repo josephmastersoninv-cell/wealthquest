@@ -26,6 +26,10 @@ export function pushProgress(record) {
 
 async function _flushProgress() {
   if (!_latestProgressRecord) return;
+  // A fresh device creates a default (empty) record before the cloud restore
+  // lands — pushing it would wipe real progress. Never push until this
+  // session has restored (or confirmed there is nothing to restore).
+  if (!window.__wqRestoreDone) { pushProgress(_latestProgressRecord); return; }
   const record = _latestProgressRecord;
   const userId = await getCurrentUserId();
   if (!userId) return;
@@ -84,6 +88,10 @@ const PROGRESS_KEY  = 'wealthquest_user_progress';
 const PORTFOLIO_KEY = 'wealthquest_portfolio';
 
 export async function pullAndRestore(userId) {
+  try { return await _pullAndRestore(userId); } finally { window.__wqRestoreDone = true; }
+}
+
+async function _pullAndRestore(userId) {
   if (!supabase || !userId) return false;
   try {
     const { data: player, error } = await supabase
@@ -123,12 +131,12 @@ export async function pullAndRestore(userId) {
         hearts_last_refill:      player.hearts_last_refill ?? local?.hearts_last_refill ?? null,
         exam_attempts:           player.exam_attempts      ?? local?.exam_attempts      ?? 0,
         exam_best_score:         player.exam_best_score    ?? local?.exam_best_score    ?? null,
-        completed_lessons:       player.completed_lessons  ?? local?.completed_lessons  ?? [],
-        mastered_terms:          player.mastered_terms     ?? local?.mastered_terms     ?? [],
-        practice_sessions:       player.practice_sessions  ?? local?.practice_sessions  ?? 0,
-        achievements:            player.achievements       ?? local?.achievements       ?? [],
-        current_level:           player.current_level      ?? local?.current_level      ?? 1,
-        lesson_stars:            player.lesson_stars       ?? local?.lesson_stars       ?? {},
+        completed_lessons:       (player.completed_lessons?.length ? player.completed_lessons : local?.completed_lessons) ?? [],
+        mastered_terms:          (player.mastered_terms?.length ? player.mastered_terms : local?.mastered_terms) ?? [],
+        practice_sessions:       Math.max(player.practice_sessions ?? 0, local?.practice_sessions ?? 0),
+        achievements:            (player.achievements?.length ? player.achievements : local?.achievements) ?? [],
+        current_level:           Math.max(player.current_level ?? 1, local?.current_level ?? 1),
+        lesson_stars:            (Object.keys(player.lesson_stars ?? {}).length ? player.lesson_stars : local?.lesson_stars) ?? {},
         daily_challenge_date:    player.daily_challenge_date   ?? local?.daily_challenge_date   ?? null,
         daily_challenge_streak:  player.daily_challenge_streak ?? local?.daily_challenge_streak ?? 0,
       };
