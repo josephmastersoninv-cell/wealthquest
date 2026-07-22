@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, CheckCircle2, XCircle, ChevronRight, Star, Zap, DollarSign, Heart, Crown } from 'lucide-react';
@@ -126,148 +126,245 @@ function StudyPhase({ terms, colors, onDone }) {
 }
 
 // ---------- Quiz phase ----------
-function QuizPhase({ terms, allTerms, colors, onDone, onWrongAnswer, onStreakHeart, isPro }) {
-  const [idx, setIdx] = useState(0);
-  const [selected, setSelected] = useState(null);
-  const [answered, setAnswered] = useState(false);
-  const [answers, setAnswers] = useState([]);
-  const [consecutiveCorrect, setConsecutiveCorrect] = useState(0);
-  // XP bomb: one random question per session gets 2× XP
-  const xpBombIdx = useMemo(() => Math.floor(Math.random() * terms.length), []);
-  const [xpBombTriggered, setXpBombTriggered] = useState(false);
+// ---------- Match-pairs exercise ----------
+function MatchExercise({ pairs, colors, onDone }) {
+  const [lefts]  = useState(() => shuffleArray(pairs));
+  const [rights] = useState(() => shuffleArray(pairs));
+  const [selL, setSelL] = useState(null);
+  const [matched, setMatched] = useState([]);
+  const [flash, setFlash] = useState(null);
+  const errors = useRef(new Set());
+  const done = matched.length === pairs.length;
 
-  const questions = useMemo(() => terms.map((term, i) => {
-    // Distractors from the same category first — makes choices meaningful, not obvious
-    const sameCat = allTerms.filter(t => t.id !== term.id && t.category === term.category);
-    const others  = allTerms.filter(t => t.id !== term.id && t.category !== term.category);
-    const pool    = [...shuffleArray(sameCat), ...shuffleArray(others)].slice(0, 3);
-
-    // Cycle 3 question types so no two consecutive questions feel the same
-    const type = i % 3 === 0 ? 'definition' : i % 3 === 1 ? 'reverse' : (term.example ? 'scenario' : 'reverse');
-
-    if (type === 'definition') {
-      const options = shuffleArray([term.definition, ...pool.map(t => t.definition)]);
-      return { term, type, prompt: 'What is the definition of…', questionText: term.term, big: true,
-        options, correct: options.indexOf(term.definition) };
-    }
-    if (type === 'reverse') {
-      const options = shuffleArray([term.term, ...pool.map(t => t.term)]);
-      return { term, type, prompt: 'Which term matches this definition?', questionText: term.definition, big: false,
-        options, correct: options.indexOf(term.term) };
-    }
-    // scenario: real-world example → identify the concept
-    const options = shuffleArray([term.term, ...pool.map(t => t.term)]);
-    return { term, type, prompt: '💼 Real-world example — which concept is this?', questionText: term.example, big: false,
-      options, correct: options.indexOf(term.term) };
-  }), [terms]);
-
-  const q = questions[idx];
-  const isCorrect = answered && selected === q.correct;
-  const isXpBomb = idx === xpBombIdx;
-
-  const handleAnswer = (i) => {
-    if (!answered) {
-      setSelected(i);
-      setAnswered(true);
-      const correct = i === q.correct;
-      if (correct) {
-        if (isXpBomb) { sounds.xpBomb(); haptics.levelUp(); setXpBombTriggered(true); }
-        else { sounds.correct(); haptics.correct(); }
-        const newStreak = consecutiveCorrect + 1;
-        setConsecutiveCorrect(newStreak);
-        if (newStreak % 10 === 0) onStreakHeart?.();
-      } else {
-        sounds.wrong(); haptics.wrong();
-        onWrongAnswer?.();
-        setConsecutiveCorrect(0);
+  function pick(side, id) {
+    if (matched.includes(id) || done) return;
+    if (side === 'L') { setSelL(id); return; }
+    if (selL == null) return;
+    if (selL === id) {
+      sounds.correct(); haptics.correct();
+      const nm = [...matched, id];
+      setMatched(nm); setSelL(null); setFlash({ id, ok: true });
+      setTimeout(() => setFlash(null), 400);
+      if (nm.length === pairs.length) {
+        const ok = errors.current.size === 0;
+        setTimeout(() => onDone(ok, [...errors.current]), 480);
       }
-    }
-  };
-
-  const handleNext = () => {
-    const newAnswers = [...answers, selected === q.correct];
-    if (idx < questions.length - 1) {
-      setAnswers(newAnswers);
-      setIdx(i => i + 1);
-      setSelected(null);
-      setAnswered(false);
     } else {
-      const wrongIds = questions
-        .filter((_, i) => !newAnswers[i])
-        .map(q => q.term.id);
-      onDone(newAnswers.filter(Boolean).length, wrongIds);
+      sounds.wrong(); haptics.wrong();
+      errors.current.add(selL);
+      setFlash({ id, ok: false }); setSelL(null);
+      setTimeout(() => setFlash(null), 400);
     }
-  };
+  }
 
   return (
-    <div className="px-4 pb-8">
-      <div className="flex items-center justify-between mb-5">
-        <span className="text-xs font-bold text-muted-foreground">Quiz · {idx + 1}/{questions.length}</span>
-        <div className="flex gap-1">
-          {questions.map((_, i) => (
-            <div key={i} className={`w-6 h-1.5 rounded-full transition-colors ${
-              i < idx ? (answers[i] ? 'bg-emerald-400' : 'bg-rose-400') : i === idx ? colors.bg : 'bg-muted'
-            }`} />
-          ))}
-        </div>
-      </div>
-
-      <motion.div key={idx} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-        <div className="flex items-center justify-between mb-2">
-          <p className={`text-xs font-bold uppercase tracking-wide ${colors.text}`}>{q.prompt}</p>
-          {isXpBomb && !answered && (
-            <motion.span animate={{ scale: [1, 1.15, 1] }} transition={{ repeat: Infinity, duration: 0.8 }}
-              className="text-[10px] font-extrabold bg-amber-400 text-white px-2 py-0.5 rounded-full">
-              ⚡ XP BOMB
-            </motion.span>
-          )}
-          {isXpBomb && answered && xpBombTriggered && (
-            <span className="text-[10px] font-extrabold text-amber-500">⚡ 2× XP!</span>
-          )}
-        </div>
-        <p className={`${q.big ? 'text-xl' : 'text-base leading-relaxed'} font-extrabold text-foreground mb-6`}>{q.questionText}</p>
-
-        <div className="flex flex-col gap-2.5">
-          {q.options.map((opt, i) => {
-            const correct = i === q.correct;
-            const sel = i === selected;
-            let cls = 'bg-card border-border text-foreground';
-            if (answered) {
-              if (correct) cls = 'bg-emerald-50 border-emerald-400 text-emerald-800';
-              else if (sel) cls = 'bg-rose-50 border-rose-300 text-rose-700';
-              else cls = 'bg-muted border-border text-muted-foreground';
-            }
+    <div>
+      <p className={`text-xs font-bold uppercase tracking-wide ${colors.text} mb-1`}>🔗 Match the pairs</p>
+      <p className="text-base font-extrabold text-foreground mb-4">Tap a term, then its meaning</p>
+      <div className="flex gap-2.5">
+        <div className="flex-1 flex flex-col gap-2">
+          {lefts.map(p => {
+            const m = matched.includes(p.id), s = selL === p.id;
             return (
-              <button key={i} onClick={() => handleAnswer(i)}
-                className={`w-full text-left p-4 rounded-2xl border-2 font-semibold text-sm transition-all ${cls} ${!answered ? 'hover:border-primary/40 active:scale-[0.98]' : ''}`}>
-                <span className="flex items-start gap-3">
-                  <span className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center text-xs font-extrabold mt-0.5 ${
-                    answered && correct ? 'border-emerald-500 bg-emerald-500 text-white' :
-                    answered && sel ? 'border-rose-400 bg-rose-400 text-white' : 'border-current'
-                  }`}>
-                    {answered && correct ? '✓' : answered && sel ? '✗' : String.fromCharCode(65 + i)}
-                  </span>
-                  {opt}
-                </span>
+              <button key={p.id} disabled={m} onClick={() => pick('L', p.id)}
+                className={`p-3 rounded-2xl border-2 text-sm font-extrabold text-left transition-all min-h-[54px] flex items-center ${
+                  m ? 'bg-emerald-500/15 border-emerald-400 text-emerald-500 opacity-50'
+                    : s ? `${colors.bg} text-white border-transparent shadow-lg`
+                    : 'bg-card border-border text-foreground active:scale-95'}`}>
+                {p.term}
               </button>
             );
           })}
         </div>
+        <div className="flex-1 flex flex-col gap-2">
+          {rights.map(p => {
+            const m = matched.includes(p.id), fl = flash?.id === p.id;
+            return (
+              <button key={p.id} disabled={m} onClick={() => pick('R', p.id)}
+                className={`p-3 rounded-2xl border-2 text-xs font-semibold text-left transition-all min-h-[54px] flex items-center ${
+                  m ? 'bg-emerald-500/15 border-emerald-400 text-emerald-600 opacity-50'
+                    : fl ? (flash.ok ? 'bg-emerald-500/15 border-emerald-400' : 'bg-rose-500/15 border-rose-400 text-rose-600')
+                    : 'bg-card border-border text-foreground active:scale-95'}`}>
+                {p.def}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <p className="text-center text-[11px] text-muted-foreground mt-3">{matched.length}/{pairs.length} matched</p>
+    </div>
+  );
+}
+
+// ---------- True / False swipe card ----------
+function TrueFalseCard({ item, colors, answered, selected, onAnswer }) {
+  return (
+    <div>
+      <p className={`text-xs font-bold uppercase tracking-wide ${colors.text} mb-3`}>👆 True or false? — swipe or tap</p>
+      <motion.div
+        drag={answered ? false : 'x'} dragConstraints={{ left: 0, right: 0 }} dragElastic={0.7}
+        onDragEnd={(e, info) => { if (answered) return; if (info.offset.x > 70) onAnswer(true); else if (info.offset.x < -70) onAnswer(false); }}
+        whileDrag={{ scale: 1.03, rotate: 0 }}
+        className={`relative rounded-3xl border-2 p-6 min-h-[150px] flex items-center text-center justify-center mb-4 ${
+          answered ? (selected === item.answer ? 'bg-emerald-50 border-emerald-400' : 'bg-rose-50 border-rose-300')
+                   : 'bg-card border-border cursor-grab active:cursor-grabbing'}`}>
+        <p className="text-base font-extrabold text-foreground leading-snug">{item.statement}</p>
+      </motion.div>
+      <div className="flex gap-3">
+        <button disabled={answered} onClick={() => onAnswer(false)}
+          className={`flex-1 h-14 rounded-2xl font-extrabold text-base border-2 transition-all ${
+            answered && item.answer === false ? 'bg-emerald-500 border-emerald-500 text-white' :
+            answered && selected === false ? 'bg-rose-400 border-rose-400 text-white' :
+            'bg-rose-500/10 border-rose-400/40 text-rose-500 active:scale-95'}`}>✗ False</button>
+        <button disabled={answered} onClick={() => onAnswer(true)}
+          className={`flex-1 h-14 rounded-2xl font-extrabold text-base border-2 transition-all ${
+            answered && item.answer === true ? 'bg-emerald-500 border-emerald-500 text-white' :
+            answered && selected === true ? 'bg-rose-400 border-rose-400 text-white' :
+            'bg-emerald-500/10 border-emerald-400/40 text-emerald-500 active:scale-95'}`}>✓ True</button>
+      </div>
+    </div>
+  );
+}
+
+// Build a mixed set of exercises: a match opener, then alternating
+// multiple-choice and true/false so no two in a row feel the same.
+function buildItems(terms, allTerms) {
+  const items = [];
+  const matchTerms = shuffleArray(terms).slice(0, Math.min(4, terms.length));
+  if (matchTerms.length >= 3) {
+    items.push({ kind: 'match', pairs: matchTerms.map(t => ({ id: t.id, term: t.term, def: t.definition })) });
+  }
+  terms.forEach((term, i) => {
+    const sameCat = allTerms.filter(t => t.id !== term.id && t.category === term.category);
+    const others  = allTerms.filter(t => t.id !== term.id && t.category !== term.category);
+    const pool    = [...shuffleArray(sameCat), ...shuffleArray(others)].slice(0, 3);
+    if (i % 2 === 1) {
+      const isTrue = Math.random() < 0.5;
+      const wrongDef = pool[0]?.definition ?? others[0]?.definition ?? term.definition;
+      items.push({ kind: 'tf', term, answer: isTrue,
+        statement: `"${term.term}" means: ${isTrue ? term.definition : wrongDef}` });
+    } else {
+      const mtype = i % 4 === 0 ? 'definition' : (term.example ? 'scenario' : 'reverse');
+      if (mtype === 'definition') {
+        const options = shuffleArray([term.definition, ...pool.map(t => t.definition)]);
+        items.push({ kind: 'mcq', term, prompt: 'What is the definition of…', questionText: term.term, big: true, options, correct: options.indexOf(term.definition) });
+      } else if (mtype === 'scenario') {
+        const options = shuffleArray([term.term, ...pool.map(t => t.term)]);
+        items.push({ kind: 'mcq', term, prompt: '💼 Real-world example — which concept?', questionText: term.example, big: false, options, correct: options.indexOf(term.term) });
+      } else {
+        const options = shuffleArray([term.term, ...pool.map(t => t.term)]);
+        items.push({ kind: 'mcq', term, prompt: 'Which term matches this definition?', questionText: term.definition, big: false, options, correct: options.indexOf(term.term) });
+      }
+    }
+  });
+  return items;
+}
+
+function QuizHeader({ items, idx, answers, colors }) {
+  return (
+    <div className="flex items-center justify-between mb-5">
+      <span className="text-xs font-bold text-muted-foreground">Quiz · {idx + 1}/{items.length}</span>
+      <div className="flex gap-1">
+        {items.map((_, i) => (
+          <div key={i} className={`w-5 h-1.5 rounded-full transition-colors ${
+            i < idx ? (answers[i] ? 'bg-emerald-400' : 'bg-rose-400') : i === idx ? colors.bg : 'bg-muted'}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Quiz phase ----------
+function QuizPhase({ terms, allTerms, colors, onDone, onWrongAnswer, onStreakHeart, isPro }) {
+  const items = useMemo(() => buildItems(terms, allTerms), [terms]);
+  const [idx, setIdx] = useState(0);
+  const [selected, setSelected] = useState(null);
+  const [answered, setAnswered] = useState(false);
+  const [answers, setAnswers] = useState([]);
+  const [streak, setStreak] = useState(0);
+  const wrongRef = useRef([]);
+
+  const item = items[idx];
+  const isLast = idx === items.length - 1;
+
+  function bumpStreak(correct) {
+    if (correct) { const s = streak + 1; setStreak(s); if (s % 10 === 0) onStreakHeart?.(); }
+    else { onWrongAnswer?.(); setStreak(0); }
+  }
+  function complete(correct, wrongIds = []) {
+    wrongRef.current.push(...wrongIds);
+    const na = [...answers, correct];
+    if (!isLast) { setAnswers(na); setIdx(i => i + 1); setSelected(null); setAnswered(false); }
+    else onDone(na.filter(Boolean).length, [...new Set(wrongRef.current)]);
+  }
+  function answerChoice(val, correct) {
+    if (answered) return;
+    setSelected(val); setAnswered(true);
+    if (correct) { sounds.correct(); haptics.correct(); } else { sounds.wrong(); haptics.wrong(); }
+    bumpStreak(correct);
+  }
+
+  // Match — self-contained, advances itself
+  if (item.kind === 'match') {
+    return (
+      <div className="px-4 pb-8">
+        <QuizHeader items={items} idx={idx} answers={answers} colors={colors} />
+        <motion.div key={idx} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+          <MatchExercise pairs={item.pairs} colors={colors}
+            onDone={(correct, wrongIds) => { bumpStreak(correct); complete(correct, wrongIds); }} />
+        </motion.div>
+      </div>
+    );
+  }
+
+  const correctPick = item.kind === 'tf' ? item.answer : item.correct;
+  const isCorrect = answered && selected === correctPick;
+
+  return (
+    <div className="px-4 pb-8">
+      <QuizHeader items={items} idx={idx} answers={answers} colors={colors} />
+      <motion.div key={idx} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+        {item.kind === 'tf' ? (
+          <TrueFalseCard item={item} colors={colors} answered={answered} selected={selected}
+            onAnswer={(v) => answerChoice(v, v === item.answer)} />
+        ) : (
+          <>
+            <p className={`text-xs font-bold uppercase tracking-wide ${colors.text} mb-2`}>{item.prompt}</p>
+            <p className={`${item.big ? 'text-xl' : 'text-base leading-relaxed'} font-extrabold text-foreground mb-6`}>{item.questionText}</p>
+            <div className="flex flex-col gap-2.5">
+              {item.options.map((opt, i) => {
+                const correct = i === item.correct, sel = i === selected;
+                let cls = 'bg-card border-border text-foreground';
+                if (answered) { if (correct) cls = 'bg-emerald-50 border-emerald-400 text-emerald-800'; else if (sel) cls = 'bg-rose-50 border-rose-300 text-rose-700'; else cls = 'bg-muted border-border text-muted-foreground'; }
+                return (
+                  <button key={i} onClick={() => answerChoice(i, i === item.correct)}
+                    className={`w-full text-left p-4 rounded-2xl border-2 font-semibold text-sm transition-all ${cls} ${!answered ? 'hover:border-primary/40 active:scale-[0.98]' : ''}`}>
+                    <span className="flex items-start gap-3">
+                      <span className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center text-xs font-extrabold mt-0.5 ${
+                        answered && correct ? 'border-emerald-500 bg-emerald-500 text-white' : answered && sel ? 'border-rose-400 bg-rose-400 text-white' : 'border-current'}`}>
+                        {answered && correct ? '✓' : answered && sel ? '✗' : String.fromCharCode(65 + i)}
+                      </span>
+                      {opt}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         {answered && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            className={`mt-4 p-3 rounded-2xl border text-xs font-semibold leading-relaxed ${
-              isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
-            }`}>
-            {isCorrect ? '✓ Correct! ' : '✗ Incorrect. '}<strong>{q.term.term}</strong> — {q.term.definition}
+            className={`mt-4 p-3 rounded-2xl border text-xs font-semibold leading-relaxed ${isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+            {isCorrect ? '✓ Correct! ' : '✗ Not quite. '}<strong>{item.term.term}</strong> — {item.term.definition}
           </motion.div>
         )}
       </motion.div>
 
       {answered && (
         <div className="mt-5">
-          <Button onClick={handleNext} className={`w-full h-14 font-extrabold rounded-2xl text-white border-0 ${colors.bg}`}>
-            {idx < questions.length - 1 ? <><ChevronRight className="w-5 h-5 mr-1" /> Next</> : 'See Results'}
+          <Button onClick={() => complete(isCorrect, isCorrect ? [] : [item.term.id])} className={`w-full h-14 font-extrabold rounded-2xl text-white border-0 ${colors.bg}`}>
+            {!isLast ? <><ChevronRight className="w-5 h-5 mr-1" /> Next</> : 'See Results'}
           </Button>
         </div>
       )}
