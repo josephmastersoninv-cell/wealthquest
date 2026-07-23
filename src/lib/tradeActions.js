@@ -3,6 +3,7 @@
 
 import marketSim from './marketSim';
 import { ASSETS, getMarketStatus } from './marketData';
+import { getAssetById as getREAsset, assetPrice as reAssetPrice } from './realEstateData';
 import { pushPortfolio } from './cloudSync';
 
 const PORTFOLIO_KEY = 'wealthquest_portfolio';
@@ -34,6 +35,22 @@ export function getLivePriceById(assetId) {
   return marketSim.prices[assetId]?.price ?? null;
 }
 
+// Property equity from LOCAL real-estate holdings (value − remaining mortgage).
+// Covers local-mode owners live; cloud owners come through the wq_re_equity
+// cache the Estate page writes. We take the larger so it's never understated.
+function localREEquity() {
+  try {
+    const h = JSON.parse(localStorage.getItem('wealthquest_re_holdings') ?? '{}');
+    let eq = 0;
+    for (const rec of Object.values(h)) {
+      const a = getREAsset(rec.assetId);
+      if (!a) continue;
+      eq += reAssetPrice(a, {}) - (rec.mortgage?.remaining ?? 0);
+    }
+    return eq;
+  } catch { return 0; }
+}
+
 // Net worth = cash + live value of stock holdings + real-estate equity.
 // This is the game's single score — "how rich are you".
 export function getNetWorth() {
@@ -43,7 +60,7 @@ export function getNetWorth() {
     const price = getLivePriceById(h.assetId) ?? h.avgCost ?? 0;
     return sum + price * h.shares;
   }, 0);
-  const reEquity = Number(localStorage.getItem('wq_re_equity') ?? 0);
+  const reEquity = Math.max(Number(localStorage.getItem('wq_re_equity') ?? 0), localREEquity());
   return Math.round(cash + invested + reEquity);
 }
 

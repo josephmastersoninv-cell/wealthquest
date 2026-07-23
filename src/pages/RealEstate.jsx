@@ -109,8 +109,7 @@ function Globe({ onPickCity }) {
   );
 }
 
-// ── Per-city visual identity for the city map ───────────────────────────────
-// ── Google-Maps-style city map: top-down streets + 3D building extrusions ────
+// ── Illustrated isometric town map (warm storybook style) ────────────────────
 function shade(hex, f) {
   const n = parseInt(hex.slice(1), 16);
   const ch = v => Math.max(0, Math.min(255, Math.round(v * f)));
@@ -118,133 +117,200 @@ function shade(hex, f) {
 }
 const P = arr => arr.map(p => p.join(',')).join(' ');
 
-// Per-city map palette + where the water sits (Google-Maps night styling)
-const MAP_THEMES = {
-  lagos:    { land: '#2a2f25', park: '#38452b', water: 'bottom', bld: '#cbb892' },
-  jakarta:  { land: '#232a26', park: '#2f4034', water: 'top',    bld: '#c7cdbf' },
-  mumbai:   { land: '#2b2620', park: '#3c3524', water: 'left',   bld: '#d8cbb0' },
-  mexico:   { land: '#2b2820', park: '#3f3a24', water: null,     bld: '#d9c9a8' },
-  saopaulo: { land: '#22271f', park: '#33422a', water: null,     bld: '#c9cbc0' },
-  warsaw:   { land: '#242730', park: '#2c3a2e', water: 'river',  bld: '#c3c7d0' },
-  seoul:    { land: '#20222e', park: '#2a3a34', water: 'river',  bld: '#c9d0e0' },
-  berlin:   { land: '#252528', park: '#31402f', water: 'river',  bld: '#d0cdc8' },
-  madrid:   { land: '#2a2820', park: '#3b3f26', water: null,     bld: '#e0d6bf' },
-  toronto:  { land: '#1f2530', park: '#294031', water: 'bottom', bld: '#cdd6e0' },
-  dublin:   { land: '#212a22', park: '#2e4530', water: 'bottom', bld: '#d8d0bd' },
-  tokyo:    { land: '#242028', park: '#33362a', water: 'right',  bld: '#e0d5dc' },
-  sydney:   { land: '#1e2a30', park: '#28402f', water: 'top',    bld: '#d4dbdf' },
-  london:   { land: '#232630', park: '#2c3a2c', water: 'river',  bld: '#cdd2da' },
-  nyc:      { land: '#20222c', park: '#2a3a30', water: 'right',  bld: '#c9d0e2' },
+// Per-city look (grass, road, water side) — themed to make sense for the place
+const CITY_LOOK = {
+  lagos:    { grass: '#7fae55', grass2: '#6f9e48', road: '#d9c9a0', water: 'bottom' },
+  jakarta:  { grass: '#6fae62', grass2: '#5f9e54', road: '#cfc6a4', water: 'top' },
+  mumbai:   { grass: '#8faa55', grass2: '#7f9a48', road: '#d8cba2', water: 'left' },
+  mexico:   { grass: '#9aac5a', grass2: '#8a9c4c', road: '#e0d3a6', water: null },
+  saopaulo: { grass: '#6bab55', grass2: '#5c9b49', road: '#d3caa2', water: null },
+  warsaw:   { grass: '#7ba85f', grass2: '#6b9852', road: '#cfcbbe', water: 'river' },
+  seoul:    { grass: '#74ac6a', grass2: '#649c5c', road: '#cdccc6', water: 'river' },
+  berlin:   { grass: '#79a75f', grass2: '#699752', road: '#cececa', water: 'river' },
+  madrid:   { grass: '#9aad57', grass2: '#8a9d4a', road: '#e2d6a8', water: null },
+  toronto:  { grass: '#74ac66', grass2: '#649c58', road: '#d0d2d6', water: 'bottom' },
+  dublin:   { grass: '#5fb35a', grass2: '#4fa34d', road: '#cdd0c2', water: 'bottom' },
+  tokyo:    { grass: '#84b070', grass2: '#74a062', road: '#d6d0d4', water: 'right' },
+  sydney:   { grass: '#77b06a', grass2: '#67a05c', road: '#d0d4d6', water: 'top' },
+  london:   { grass: '#72a760', grass2: '#629752', road: '#cdd0d4', water: 'river' },
+  nyc:      { grass: '#6fa663', grass2: '#5f9656', road: '#cfd2d8', water: 'right' },
 };
 
-// 10 building footprints laid out inside the road-grid blocks (x, y = top-left)
-// [x, y, w, d, height, isLandmark]
-const FOOTPRINTS = [
-  [ 38,  40, 26, 20, 14, 0],   // studio
-  [122,  36, 30, 22, 40, 0],   // apartment tower
-  [232,  42, 30, 22, 16, 0],   // house
-  [ 40, 128, 30, 24, 24, 0],   // townhouse
-  [232, 126, 26, 22, 15, 0],   // cafe
-  [122, 130, 30, 22, 20, 0],   // shop
-  [ 34, 214, 34, 26, 16, 0],   // school
-  [230, 210, 30, 24, 52, 0],   // office
-  [126, 212, 30, 24, 42, 0],   // hotel
-  [158,  92, 44, 34, 66, 1],   // landmark — center
-];
-const PARKS = [[288, 150, 46, 46], [16, 96, 34, 30]];
+const WALL = '#efe3cc', WALL_SHADE = 0.8;
 
-// One 3D building: ground footprint + extruded roof with shaded walls
-function Building3D({ x, y, w, d, h, base, accent, landmark }) {
-  const dx = -h * 0.42, dy = -h * 0.72;               // oblique extrude vector
-  const g  = [[x, y], [x + w, y], [x + w, y + d], [x, y + d]];        // ground
-  const r  = g.map(([px, py]) => [px + dx, py + dy]);                 // roof
-  const wallF = [g[3], g[2], r[2], r[3]];             // front (toward viewer)
-  const wallL = [g[0], g[3], r[3], r[0]];             // left
-  const lit = shade(base, 1.12), mid = shade(base, 0.82), dark = shade(base, 0.6);
-  return (
-    <g>
-      <polygon points={P([g[3], g[2], [g[2][0] + 6, g[2][1] + 5], [g[3][0] + 6, g[3][1] + 5]])} fill="#000" opacity="0.18" />
-      <polygon points={P(wallL)} fill={dark} />
-      <polygon points={P(wallF)} fill={mid} />
-      {/* window rows on the two visible walls */}
-      {Array.from({ length: Math.min(6, Math.floor(h / 9)) }).map((_, i) => {
-        const t = (i + 1) / (Math.floor(h / 9) + 1);
-        const ay = dy * t, ax = dx * t;
-        return <g key={i}>
-          <line x1={x + ax + 3} y1={y + d + ay} x2={x + w + ax - 3} y2={y + d + ay} stroke={accent ?? '#fde68a'} strokeWidth="1" opacity="0.5" />
-        </g>;
-      })}
-      <polygon points={P(r)} fill={lit} stroke={shade(base, 0.9)} strokeWidth="0.5" />
-      {landmark && <circle cx={r[0][0] + w / 2} cy={r[0][1] + d / 2} r="3" fill="#fbbf24" />}
-      {accent && <polygon points={P([r[3], r[2], [r[2][0], r[2][1] + 4], [r[3][0], r[3][1] + 4]])} fill={accent} />}
-    </g>
-  );
+// Iso box from front-bottom vertex S=(fx,fy): returns the 4 base + 4 roof pts
+function isoBox(fx, fy, hw, h) {
+  const S = [fx, fy];
+  const E = [fx + hw, fy - hw / 2];
+  const W = [fx - hw, fy - hw / 2];
+  const N = [fx, fy - hw];
+  const up = ([x, y]) => [x, y - h];
+  return { S, E, W, N, Sr: up(S), Er: up(E), Wr: up(W), Nr: up(N) };
 }
 
-const BLD_ACCENT = [null, null, '#b91c1c', '#b91c1c', '#dc2626', '#2563eb', '#16a34a', null, '#7c3aed', null];
+// Draw one building sprite → array of SVG nodes. cx,cy = front-bottom vertex.
+function drawBuilding(cx, cy, spec, key) {
+  const { hw, h, roof, roofColor, wall = WALL, awning, glass, sign, flag, chimney } = spec;
+  const b = isoBox(cx, cy, hw, h);
+  const els = [];
+  // ground shadow
+  els.push(<polygon key="sh" points={P([b.S, b.E, [b.E[0]+4,b.E[1]+4], [b.S[0]+4,b.S[1]+4]])} fill="#000" opacity="0.12" />);
+  // walls (right = brighter, left = shaded)
+  const wR = glass ? '#bcd3e6' : wall;
+  const wL = glass ? shade('#bcd3e6', 0.82) : shade(wall, WALL_SHADE);
+  els.push(<polygon key="wr" points={P([b.S, b.E, b.Er, b.Sr])} fill={wR} stroke={shade(wR,0.75)} strokeWidth="0.5" />);
+  els.push(<polygon key="wl" points={P([b.S, b.W, b.Wr, b.Sr])} fill={wL} stroke={shade(wL,0.8)} strokeWidth="0.5" />);
+  // windows (rows up the two front walls)
+  const rows = Math.max(1, Math.floor(h / 11));
+  for (let i = 0; i < rows; i++) {
+    const t = (i + 0.6) / rows;
+    const wy = -h * t;
+    const winC = glass ? '#8fb7d8' : '#a9cbe0';
+    // right wall window
+    els.push(<rect key={`wr${i}`} x={cx + hw*0.28} y={cy - hw*0.14 + wy} width={hw*0.34} height="5" fill={winC} transform={`skewY(-26.57 ${cx} ${cy})`} opacity="0.9" />);
+    // left wall window
+    els.push(<rect key={`wl${i}`} x={cx - hw*0.62} y={cy - hw*0.14 + wy} width={hw*0.34} height="5" fill={shade(winC,0.85)} transform={`skewY(26.57 ${cx} ${cy})`} opacity="0.9" />);
+  }
+  // door on the front-right wall
+  els.push(<rect key="door" x={cx + hw*0.05} y={cy - 9} width={hw*0.34} height="9" rx="1" fill="#7c4a2c" transform={`skewY(-26.57 ${cx} ${cy})`} />);
+  // awning (shops/cafes)
+  if (awning) {
+    els.push(<polygon key="aw" points={P([[cx, cy-1], b.E, [b.E[0], b.E[1]-5], [cx, cy-6]])} fill={awning} />);
+    els.push(<polygon key="aw2" points={P([[cx, cy-1], b.W, [b.W[0], b.W[1]-5], [cx, cy-6]])} fill={shade(awning,0.8)} />);
+  }
+  if (sign) els.push(<rect key="sg" x={cx-hw*0.5} y={cy-h+2} width={hw} height="5" rx="1.5" fill="#334155" transform={`skewY(-26.57 ${cx} ${cy})`} opacity="0.85" />);
+
+  // roof
+  if (roof === 'flat') {
+    els.push(<polygon key="rf" points={P([b.Nr, b.Er, b.Sr, b.Wr])} fill={shade(roofColor,1.05)} stroke={shade(roofColor,0.8)} strokeWidth="0.6" />);
+    els.push(<polygon key="par" points={P([b.Wr, b.Sr, [b.Sr[0], b.Sr[1]-3], [b.Wr[0], b.Wr[1]-3]])} fill={shade(roofColor,0.7)} />);
+  } else if (roof === 'spire') {
+    els.push(<polygon key="rf" points={P([b.Nr, b.Er, b.Sr, b.Wr])} fill={shade(roofColor,1.05)} />);
+    const apex = [cx, cy - h - hw*1.5];
+    els.push(<polygon key="sp1" points={P([b.Wr, b.Sr, apex])} fill={roofColor} />);
+    els.push(<polygon key="sp2" points={P([b.Sr, b.Er, apex])} fill={shade(roofColor,0.7)} />);
+    els.push(<circle key="ball" cx={apex[0]} cy={apex[1]} r="2.4" fill="#fbbf24" />);
+  } else {
+    // hip / gable pyramid
+    const rh = roof === 'gable' ? hw*0.9 : hw*0.7;
+    const apex = [cx, cy - h - hw/2 - rh];
+    els.push(<polygon key="r1" points={P([b.Nr, b.Er, apex])} fill={shade(roofColor,1.12)} />);
+    els.push(<polygon key="r2" points={P([b.Er, b.Sr, apex])} fill={roofColor} />);
+    els.push(<polygon key="r3" points={P([b.Sr, b.Wr, apex])} fill={shade(roofColor,0.72)} />);
+    els.push(<polygon key="r4" points={P([b.Wr, b.Nr, apex])} fill={shade(roofColor,0.9)} />);
+    if (chimney) els.push(<rect key="ch" x={cx-hw*0.55} y={cy-h-hw*0.5} width="4" height="8" fill="#8a5a3a" />);
+  }
+  if (flag) {
+    els.push(<line key="fp" x1={cx} y1={cy-h-hw/2-2} x2={cx} y2={cy-h-hw/2-16} stroke="#94a3b8" strokeWidth="1.2" />);
+    els.push(<polygon key="fg" points={`${cx},${cy-h-hw/2-16} ${cx+9},${cy-h-hw/2-13} ${cx},${cy-h-hw/2-10}`} fill="#ef4444" />);
+  }
+  return <g key={key}>{els}</g>;
+}
+
+function Tree({ x, y, s = 1 }) {
+  return <g>
+    <ellipse cx={x} cy={y} rx={7*s} ry={3*s} fill="#000" opacity="0.1" />
+    <rect x={x-1.2} y={y-8*s} width="2.4" height={8*s} fill="#7a5230" />
+    <circle cx={x} cy={y-12*s} r={7*s} fill="#4f8f43" />
+    <circle cx={x-4*s} cy={y-9*s} r={5*s} fill="#5da04f" />
+    <circle cx={x+4*s} cy={y-10*s} r={5*s} fill="#458a3c" />
+  </g>;
+}
+function Lamp({ x, y }) {
+  return <g><line x1={x} y1={y} x2={x} y2={y-15} stroke="#3f4451" strokeWidth="1.6" /><circle cx={x} cy={y-16} r="2.6" fill="#fde68a" /></g>;
+}
+
+// asset-index → building spec (matches getCityAssets order)
+function specFor(i, cityAccent) {
+  const S = [
+    { hw: 15, h: 12, roof: 'hip',   roofColor: '#c0563b' },                 // studio
+    { hw: 17, h: 40, roof: 'flat',  roofColor: '#8a8f98' },                 // apartment
+    { hw: 18, h: 13, roof: 'gable', roofColor: '#b5432f', chimney: true },  // house
+    { hw: 16, h: 22, roof: 'hip',   roofColor: '#8a4e2c', chimney: true },  // townhouse
+    { hw: 15, h: 13, roof: 'hip',   roofColor: '#3f7d52', awning: '#d64545' }, // cafe
+    { hw: 18, h: 15, roof: 'flat',  roofColor: '#9a9a9a', awning: '#2f6fb0', sign: true }, // shop
+    { hw: 22, h: 15, roof: 'gable', roofColor: '#3c6e9c', flag: true },     // school
+    { hw: 17, h: 50, roof: 'flat',  roofColor: '#6b7280', glass: true },    // office
+    { hw: 19, h: 40, roof: 'flat',  roofColor: '#7c5cae', sign: true },     // hotel
+    { hw: 20, h: 34, roof: 'spire', roofColor: cityAccent ?? '#b08d57', flag: true }, // landmark
+  ];
+  return S[i] ?? S[0];
+}
+
+// front-bottom anchors, arranged around a central iso crossroads (kept clear)
+const ANCHORS = [
+  [78, 150],   // studio  — left
+  [140, 108],  // apartment — back-left (tall)
+  [225, 112],  // house — back-right
+  [55, 196],   // townhouse — front-left
+  [300, 152],  // cafe — right
+  [258, 198],  // shop — front-right
+  [180, 96],   // school — back-center
+  [110, 244],  // office — front (tall)
+  [250, 250],  // hotel — front-right (tall)
+  [182, 176],  // landmark — center
+];
+const TREES = [[30, 150], [335, 138], [40, 250], [325, 250], [150, 285], [215, 292], [95, 120], [270, 120]];
+const LAMPS = [[120, 168], [242, 168], [180, 220]];
 
 function CityMap({ city, assets, world, ownedCounts, myFlag, onTap }) {
-  const t = MAP_THEMES[city.id] ?? MAP_THEMES.dublin;
+  const L = CITY_LOOK[city.id] ?? CITY_LOOK.dublin;
   const W = 360, H = 300;
+  const cityAccent = { dublin:'#5b7d3a', nyc:'#5a6072', tokyo:'#b05a7a', london:'#6a6f7c' }[city.id];
 
-  // road grid
-  const vRoads = [90, 180, 270], hRoads = [96, 176, 256];
-  const water = t.water;
-
-  // paint buildings back-to-front (smaller y first)
-  const order = assets.map((a, i) => ({ a, fp: FOOTPRINTS[i] ?? FOOTPRINTS[0], accent: BLD_ACCENT[i], idx: i }))
-    .sort((x, y) => (x.fp[1] + x.fp[4] * -0.7) - (y.fp[1] + y.fp[4] * -0.7));
+  const order = assets.map((a, i) => ({ a, i, anchor: ANCHORS[i] ?? ANCHORS[0], spec: specFor(i, cityAccent) }))
+    .sort((x, y) => x.anchor[1] - y.anchor[1]);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-2xl border border-border select-none" style={{ background: t.land }}>
-      {/* water bodies */}
-      {water === 'bottom' && <rect x="0" y="262" width={W} height="40" fill="#1c3a4a" />}
-      {water === 'top' && <rect x="0" y="0" width={W} height="34" fill="#1c3a4a" />}
-      {water === 'left' && <rect x="0" y="0" width="30" height={H} fill="#1c3a4a" />}
-      {water === 'right' && <rect x="330" y="0" width="30" height={H} fill="#1c3a4a" />}
-      {water === 'river' && <path d="M -10 70 Q 120 110 200 150 T 380 210 L 380 250 Q 200 190 120 150 T -10 110 Z" fill="#1c3a4a" opacity="0.9" />}
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-2xl border border-border select-none" style={{ background: L.grass }}>
+      {/* subtle grass checker */}
+      {Array.from({ length: 6 }).map((_, r) => Array.from({ length: 7 }).map((_, c) =>
+        (r + c) % 2 === 0 ? <rect key={`${r}-${c}`} x={c*54} y={r*54} width="54" height="54" fill={L.grass2} opacity="0.5" /> : null))}
 
-      {/* parks */}
-      {PARKS.map(([x, y, w, h], i) => <rect key={i} x={x} y={y} width={w} height={h} rx="6" fill={t.park} />)}
+      {/* water */}
+      {L.water === 'bottom' && <rect x="0" y="266" width={W} height="34" fill="#5aa0c4" />}
+      {L.water === 'top' && <rect x="0" y="0" width={W} height="26" fill="#5aa0c4" />}
+      {L.water === 'left' && <rect x="0" y="0" width="24" height={H} fill="#5aa0c4" />}
+      {L.water === 'right' && <rect x="336" y="0" width="24" height={H} fill="#5aa0c4" />}
+      {L.water === 'river' && <path d="M -10 60 Q 120 100 200 150 T 380 220 L 380 250 Q 210 190 130 150 T -10 95 Z" fill="#5aa0c4" opacity="0.9" />}
 
-      {/* road network */}
-      {hRoads.map((y, i) => <rect key={`h${i}`} x="0" y={y - 5} width={W} height="10" fill={shade(t.land, 1.7)} />)}
-      {vRoads.map((x, i) => <rect key={`v${i}`} x={x - 5} y="0" width="10" height={H} fill={shade(t.land, 1.7)} />)}
-      {/* diagonal avenue */}
-      <line x1="0" y1="300" x2="360" y2="40" stroke={shade(t.land, 1.9)} strokeWidth="9" />
-      {/* lane dashes on main roads */}
-      {hRoads.map((y, i) => <line key={`hd${i}`} x1="0" y1={y} x2={W} y2={y} stroke={shade(t.land, 2.6)} strokeWidth="1" strokeDasharray="6 8" opacity="0.7" />)}
+      {/* iso crossroads */}
+      <line x1="10" y1="220" x2="350" y2="82" stroke={L.road} strokeWidth="24" strokeLinecap="round" />
+      <line x1="10" y1="82" x2="350" y2="220" stroke={L.road} strokeWidth="24" strokeLinecap="round" />
+      <line x1="10" y1="220" x2="350" y2="82" stroke={shade(L.road,0.9)} strokeWidth="1.5" strokeDasharray="5 7" opacity="0.6" />
+      <line x1="10" y1="82" x2="350" y2="220" stroke={shade(L.road,0.9)} strokeWidth="1.5" strokeDasharray="5 7" opacity="0.6" />
 
-      {/* buildings */}
-      {order.map(({ a, fp, accent, idx }) => {
-        const [x, y, w, d, h, lm] = fp;
+      {TREES.map(([x, y], i) => <Tree key={`t${i}`} x={x} y={y} s={0.9} />)}
+      {LAMPS.map(([x, y], i) => <Lamp key={`l${i}`} x={x} y={y} />)}
+
+      {/* buildings back-to-front */}
+      {order.map(({ a, i, anchor: [cx, cy], spec }) => {
         const rec = world[a.id];
         const price = assetPrice(a, ownedCounts);
         const flag = rec ? (rec.mine ? (myFlag ?? '🚩') : (getCountryByCode(rec.ownerCountry)?.flag ?? '🚩')) : null;
         const vac = rec?.mine && isVacant(a.id);
         const lvl = rec?.mine ? propertyMeta(a.id).level : 0;
         const label = rec ? (rec.mine ? (vac ? 'VACANT' : 'You' + (lvl ? ' ' + '★'.repeat(lvl) : '')) : (rec.ownerName ?? 'Owned').slice(0, 9)) : fmtK(price);
-        const base = rec?.mine ? '#f5d98a' : t.bld;   // your buildings tinted gold
-        const cx = x + w / 2, topY = y + d / 2 - h * 0.72;
+        const s2 = rec?.mine ? { ...spec, wall: '#f5d98a' } : spec;
+        const topY = cy - spec.h - spec.hw - 6;
         return (
           <motion.g key={a.id} onClick={() => onTap(a)} style={{ cursor: 'pointer', transformBox: 'fill-box', transformOrigin: '50% 100%' }}
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', damping: 16, stiffness: 240, delay: idx * 0.04 }}
+            transition={{ type: 'spring', damping: 16, stiffness: 240, delay: i * 0.04 }}
             whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}>
-            <Building3D x={x} y={y} w={w} d={d} h={h} base={base} accent={vac ? '#fb7185' : accent} landmark={lm} />
-            {/* Google-Maps pin for owned; price chip for available */}
+            {drawBuilding(cx, cy, s2, a.id)}
             {rec ? (
               <g>
-                <path d={`M ${cx} ${topY - 20} a 7 7 0 1 0 0.1 0 Z`} fill={rec.mine ? (vac ? '#e11d48' : '#f59e0b') : '#6366f1'} />
-                <path d={`M ${cx - 6} ${topY - 20} L ${cx + 6} ${topY - 20} L ${cx} ${topY - 8} Z`} fill={rec.mine ? (vac ? '#e11d48' : '#f59e0b') : '#6366f1'} />
-                <text x={cx} y={topY - 17} textAnchor="middle" fontSize="8">{flag}</text>
-                <rect x={cx - 26} y={topY - 5} width="52" height="12" rx="6" fill="#0f172a" opacity="0.9" />
-                <text x={cx} y={topY + 3.5} textAnchor="middle" fontSize="7.5" fontWeight="800" fill={rec.mine ? '#fde68a' : '#c7d2fe'}>{label}</text>
+                <path d={`M ${cx} ${topY-18} a 7 7 0 1 0 0.1 0 Z`} fill={rec.mine ? (vac ? '#e11d48' : '#f59e0b') : '#6366f1'} />
+                <path d={`M ${cx-6} ${topY-18} L ${cx+6} ${topY-18} L ${cx} ${topY-6} Z`} fill={rec.mine ? (vac ? '#e11d48' : '#f59e0b') : '#6366f1'} />
+                <text x={cx} y={topY-15} textAnchor="middle" fontSize="8">{flag}</text>
+                <rect x={cx-27} y={topY-3} width="54" height="12" rx="6" fill="#0f172a" opacity="0.9" />
+                <text x={cx} y={topY+5.5} textAnchor="middle" fontSize="7.5" fontWeight="800" fill={rec.mine ? '#fde68a' : '#c7d2fe'}>{label}</text>
               </g>
             ) : (
               <g>
-                <rect x={cx - 22} y={topY - 12} width="44" height="13" rx="6.5" fill="#0f172a" opacity="0.88" />
-                <text x={cx} y={topY - 3} textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff">{fmtK(price)}</text>
+                <rect x={cx-22} y={topY-10} width="44" height="13" rx="6.5" fill="#0f172a" opacity="0.88" />
+                <text x={cx} y={topY-1} textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff">{fmtK(price)}</text>
               </g>
             )}
           </motion.g>
@@ -253,6 +319,7 @@ function CityMap({ city, assets, world, ownedCounts, myFlag, onTap }) {
     </svg>
   );
 }
+
 // ── Buy sheet ────────────────────────────────────────────────────────────────
 function BuySheet({ asset, ownedCounts, onClose, onBought }) {
   const price = assetPrice(asset, ownedCounts);
